@@ -25,16 +25,9 @@ void verificarParametros(int argc, char **argv) {
     }
 }
 
-void inicializarDadosSocket(const char *enderecoStr, const char *portaStr, struct sockaddr_storage *dadosSocket, char* comandoPrograma) {
+void inicializarDadosSocket(const char *enderecoStr, unsigned short porta, struct sockaddr_storage *dadosSocket, char* comandoPrograma) {
     // Se a porta ou o endereço não estiverem certos imprime o uso correto dos parâmetros
-    if(enderecoStr == NULL || portaStr == NULL) {
-        tratarParametroIncorreto(comandoPrograma);
-    }
-
-    // Converte o parâmetro da porta para unsigned short
-    unsigned short porta = (unsigned short)atoi(portaStr);
-
-    if(porta == 0) { // Se a porta dada é inválida imprime a mensagem de uso dos parâmetros
+    if(enderecoStr == NULL) {
         tratarParametroIncorreto(comandoPrograma);
     }
 
@@ -59,27 +52,20 @@ void inicializarDadosSocket(const char *enderecoStr, const char *portaStr, struc
     }
 }
 
-
-int inicializarSocketCliente(struct sockaddr_storage* dadosSocket) {
-    // Inicializa o socket do cliente por meio da função socket
-    int socketCliente;
-    socketCliente = socket(dadosSocket->ss_family, SOCK_DGRAM , 0);
-    if(socketCliente == -1) {
-        sairComMensagem("Erro ao iniciar o socket");
+int inicializarSocketClienteIPv4() {
+    int socketCliente = socket(AF_INET, SOCK_DGRAM, 0);
+    if(socketCliente < 0) {
+        sairComMensagem("Erro ao criar o socket");
     }
     return socketCliente;
 }
 
-void conectarAoServidor(struct sockaddr_storage* dadosSocket, int socketCliente) {
-    // Tenta conectar ao servidor especificado nos parâmetros
-    struct sockaddr *enderecoSocket = (struct sockaddr*)(dadosSocket);
-    if(connect(socketCliente, enderecoSocket, sizeof(*dadosSocket)) != 0) {
-        sairComMensagem("Erro ao conectar no servidor");
+int inicializarSocketClienteIPv6() {
+    int socketCliente = socket(AF_INET6, SOCK_DGRAM, 0);
+    if(socketCliente < 0) {
+        sairComMensagem("Erro ao criar o socket");
     }
-    // Printa um log para debug TODO
-    char enderecoStr[BUFSZ];
-    converterEnderecoParaString(enderecoSocket, enderecoStr, BUFSZ);
-    printf("Conectado ao endereco %s\n", enderecoStr);
+    return socketCliente;
 }
 
 void leMensagemEntrada(char mensagem[BUFSZ]) {
@@ -92,27 +78,41 @@ void leMensagemEntrada(char mensagem[BUFSZ]) {
     }
 }
 
-void enviaMensagemServidor(int socketCliente, char mensagem[BUFSZ]) {
+void enviaMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
+    int socketCliente;
+    if(dadosServidor.ss_family == AF_INET) {
+        socketCliente = socketClienteIPv4;
+    } else {
+        socketCliente = socketClienteIPv6;
+    }
     // Envia o parâmetro 'mensagem' para o servidor
-    size_t tamanhoMensagemEnviada = send(socketCliente, mensagem, strlen(mensagem), 0);
+    size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), MSG_CONFIRM, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
     if (strlen(mensagem) != tamanhoMensagemEnviada) {
         sairComMensagem("Erro ao enviar mensagem");
     }
+    printf("> %s", mensagem);
 }
 
-void recebeMensagemServidor(int socketCliente, char mensagem[BUFSZ]) {
+void recebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
+    int socketCliente;
+    if(dadosServidor.ss_family == AF_INET) {
+        socketCliente = socketClienteIPv4;
+    } else {
+        socketCliente = socketClienteIPv6;
+    }
     memset(mensagem, 0, BUFSZ);
     size_t tamanhoMensagem = 0;
     // Recebe mensagens do servidor enquanto elas não terminarem com \n
     do {
-        size_t tamanhoLidoAgora = recv(socketCliente, mensagem+tamanhoMensagem, BUFSZ-(int)tamanhoMensagem-1, 0);
+        socklen_t len = sizeof(dadosServidor);
+        size_t tamanhoLidoAgora = recvfrom(socketCliente, (char *)mensagem, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len);
         if(tamanhoLidoAgora == 0) {
             break;
         }
         tamanhoMensagem += tamanhoLidoAgora;
     }while(mensagem[strlen(mensagem)-1] != '\n');
     mensagem[tamanhoMensagem] = '\0';
-
+    printf("< %s\n", mensagem);
     // Caso a mensagem lida tenha tamanho zero, o servidor foi desconectado
     if(strlen(mensagem) == 0) {
         // Conexão caiu
@@ -120,23 +120,59 @@ void recebeMensagemServidor(int socketCliente, char mensagem[BUFSZ]) {
     }
 }
 
-void comunicarComServidor(int socketCliente) {
-    // Laço para a comunicação do cliente com o servidor
+void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor1, 
+    struct sockaddr_storage dadosServidor2, struct sockaddr_storage dadosServidor3, struct sockaddr_storage dadosServidor4) {
+    
     char mensagem[BUFSZ];
-    while(1) {
-        leMensagemEntrada(mensagem);
-        enviaMensagemServidor(socketCliente, mensagem);
-        recebeMensagemServidor(socketCliente, mensagem);
-        printf("%s", mensagem);
-    }
+    strcpy(mensagem, "start\n");
+    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor1, mensagem);
+    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor1, mensagem);
+    printf("%s\n", mensagem);
+
+    strcpy(mensagem, "start\n");
+    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor2, mensagem);
+    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor2, mensagem);
+    printf("%s\n", mensagem);
+
+    strcpy(mensagem, "start\n");
+    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor3, mensagem);
+    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor3, mensagem);
+    printf("%s\n", mensagem);
+
+    strcpy(mensagem, "start\n");
+    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor4, mensagem);
+    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor4, mensagem);
+    printf("%s\n", mensagem);
+
+    // // Laço para a comunicação do cliente com o servidor
+    // while(1) {
+    //     leMensagemEntrada(mensagem);
+    //     enviaMensagemServidor(socketCliente, mensagem);
+    //     recebeMensagemServidor(socketCliente, mensagem);
+    //     printf("%s", mensagem);
+    // }
 }
 
 int main(int argc, char **argv) {
     verificarParametros(argc, argv);
-    struct sockaddr_storage dadosSocket;
-    inicializarDadosSocket(argv[1], argv[2], &dadosSocket, argv[0]);
-    int socketCliente = inicializarSocketCliente(&dadosSocket);
-    conectarAoServidor(&dadosSocket, socketCliente);
-    comunicarComServidor(socketCliente);
+    struct sockaddr_storage dadosServidor1;
+    struct sockaddr_storage dadosServidor2;
+    struct sockaddr_storage dadosServidor3;
+    struct sockaddr_storage dadosServidor4;
+    if(argv[2] == NULL) {
+        tratarParametroIncorreto(argv[0]);
+    }
+    // Converte o parâmetro da porta para unsigned short
+    unsigned short porta = (unsigned short) atoi(argv[2]); // unsigned short
+
+    inicializarDadosSocket(argv[1], porta, &dadosServidor1, argv[0]);
+    inicializarDadosSocket(argv[1], porta+1, &dadosServidor2, argv[0]);
+    inicializarDadosSocket(argv[1], porta+2, &dadosServidor3, argv[0]);
+    inicializarDadosSocket(argv[1], porta+3, &dadosServidor4, argv[0]);
+    int socketClienteIPv4 = inicializarSocketClienteIPv4();
+    int socketClienteIPv6 = inicializarSocketClienteIPv6();
+    comunicarComServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor1, dadosServidor2, dadosServidor3, dadosServidor4);
+    close(socketClienteIPv4);
+    close(socketClienteIPv6);
 	exit(EXIT_SUCCESS);
 }

@@ -1,0 +1,1 @@
+1. Os servidores devem escrever saída na stdout ou em arquivos? É para usar fork mesmo para criar os servidores?

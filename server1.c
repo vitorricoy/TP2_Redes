@@ -10,6 +10,11 @@
 #include <sys/types.h>
 #include <arpa/inet.h>
 
+#define PROXIMA_MENSAGEM 0
+#define PROXIMA_COMUNICACAO 1
+#define PROXIMO_CLIENTE 2
+#define ENCERRAR 3
+
 #define BUFSZ 512
 
 void tratarParametroIncorreto(char* comandoPrograma) {
@@ -116,52 +121,33 @@ int mensagemInvalida(char* mensagem) {
     return 0;
 }
 
-void enviarMensagem(char* mensagem, int socketCliente) {
+void enviarMensagem(char* mensagem, int socketServidor, struct sockaddr_storage dadosSocketCliente) {
     // Coloca um '\n' no fim da mensagem a ser enviada
     strcat(mensagem, "\n");
     // Envia o conteudo de 'mensagem' para o cliente
-    size_t tamanhoMensagemEnviada = send(socketCliente, mensagem, strlen(mensagem), 0);
+    size_t tamanhoMensagemEnviada = sendto(socketServidor, (const char *)mensagem, strlen(mensagem), MSG_CONFIRM, (const struct sockaddr *) &dadosSocketCliente, sizeof(dadosSocketCliente));
     if (strlen(mensagem) != tamanhoMensagemEnviada) {
         sairComMensagem("Erro ao enviar mensagem ao cliente");
     }
 }
 
-void escutarPorConexoes(int socketServidor, struct sockaddr_storage* dadosSocket) {
+void bindServidor(int socketServidor, struct sockaddr_storage* dadosSocket) {
     struct sockaddr *enderecoSocket = (struct sockaddr*)(dadosSocket);
 
     // Dá bind do servidor na porta recebida por parâmetro
     if(bind(socketServidor, enderecoSocket, sizeof(*dadosSocket)) != 0) {
         sairComMensagem("Erro ao dar bind no endereço e porta para o socket");
     }
-
-    // Faz o servidor escutar por conexões
-    // Limite de 100 conexões na fila de espera
-    if(listen(socketServidor, 100) != 0) {
-        sairComMensagem("Erro ao escutar por conexoes no servidor");
-    }
 }
 
-int aceitarSocketCliente(int socketServidor) {
-    // Inicializa as estruturas do socket do cliente
-    struct sockaddr_storage dadosSocketCliente;
-    struct sockaddr* enderecoSocketCliente = (struct sockaddr*)(&dadosSocketCliente);
-    socklen_t tamanhoEnderecoSocketCliente = sizeof(enderecoSocketCliente);
-
-    // Aceita uma conexão de um cliente
-    int socketCliente = accept(socketServidor, enderecoSocketCliente, &tamanhoEnderecoSocketCliente);
-
-    if(socketCliente == -1) {
-        sairComMensagem("Erro ao aceitar a conexao de um cliente");
-    }
-    return socketCliente;
-}
-
-void receberMensagem(int socketCliente, char mensagem[BUFSZ]) {
+struct sockaddr_storage receberMensagem(int socketServidor, struct sockaddr_storage dadosSocket, char mensagem[BUFSZ]) {
     memset(mensagem, 0, BUFSZ);
     size_t tamanhoMensagem = 0;
+    struct sockaddr_storage dadosSocketCliente;
     // Recebe mensagens do cliente enquanto elas não terminarem com \n
     do {
-        size_t tamanhoLidoAgora = recv(socketCliente, mensagem+tamanhoMensagem, BUFSZ-(int)tamanhoMensagem-1, 0);
+        socklen_t len = sizeof(dadosSocketCliente); 
+        size_t tamanhoLidoAgora = recvfrom(socketServidor, (char *)mensagem, BUFSZ, MSG_WAITALL, ( struct sockaddr *) &dadosSocketCliente, &len);
         if(tamanhoLidoAgora == 0) {
             break;
         }
@@ -169,35 +155,26 @@ void receberMensagem(int socketCliente, char mensagem[BUFSZ]) {
     } while(mensagem[strlen(mensagem)-1] != '\n');
 
     mensagem[tamanhoMensagem] = '\0';
+    return dadosSocketCliente;
 }
 
-int tratarMensagemRecebida(char* mensagem, int socketCliente) {
-
-}
-
-int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketCliente) {
-    // Analisa cada mensagem recebida separada por \n
-    char *parteMensagem;
-    for(parteMensagem = strtok(mensagem, "\n"); parteMensagem != NULL; parteMensagem = strtok(NULL, "\n")) {
-        int retorno = tratarMensagemRecebida(parteMensagem, socketCliente);
-        // Indica caso seja necessário ignorar as próximas mensagens recebidas
-        if(retorno == PROXIMA_COMUNICACAO || retorno == PROXIMO_CLIENTE || retorno == ENCERRAR) {
-            return retorno;
-        }
+int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct sockaddr_storage dadosSocketCliente) {
+    if(strcmp(mensagem, "start\n") == 0) {
+        char resposta[BUFSZ];
+        strcpy(resposta, "game started: path 1");
+        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
     }
     // Identifica que o servidor deve receber o próximo recv do cliente
     return PROXIMA_COMUNICACAO;
 }
 
-int receberETratarMensagemCliente(int socketCliente) {
+int receberETratarMensagemCliente(int socketServidor, struct sockaddr_storage dadosSocket) {
     char mensagem[BUFSZ];
-    receberMensagem(socketCliente, mensagem);
-    if(strlen(mensagem) == 0) {
-        // Identifica que o servidor deve se conectar com outro cliente
-        return PROXIMO_CLIENTE;
-    }
+    struct sockaddr_storage dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
 
-    int retorno = tratarMensagensRecebidas(mensagem, socketCliente);
+    int retorno = tratarMensagensRecebidas(mensagem, socketServidor, dadosSocketCliente);
+
+
     
     if(retorno == ENCERRAR || retorno == PROXIMO_CLIENTE) { // Se o servidor deve encerrar ou se conectar com outro cliente
         return retorno;
@@ -206,37 +183,42 @@ int receberETratarMensagemCliente(int socketCliente) {
     return PROXIMA_COMUNICACAO;
 }
 
-int tratarConexaoCliente(int socketServidor) {
-    int socketCliente = aceitarSocketCliente(socketServidor);
-    // Enquanto a conexão com o cliente esteja ativa
-    while(1) {
-        int retorno = receberETratarMensagemCliente(socketCliente);
-        if(retorno == PROXIMO_CLIENTE || retorno == ENCERRAR) { // Se o servidor deve encerrar ou se conectar com outro cliente
-            // Encerra a conexão com o cliente
-            close(socketCliente);
-            return retorno;
-        }
-    }
-    // Encerra a conexão com o cliente
-    close(socketCliente);
-    // Indica que o servidor deve se conectar com outro cliente
-    return PROXIMO_CLIENTE;
-}
-
-void esperarPorConexoesCliente(int socketServidor) {
+void esperarPorConexoesCliente(int socketServidor, struct sockaddr_storage dadosSocket) {
     // Enquanto o servidor estiver ativo ele deve receber conexões de clientes
     while (1) {
-        int retorno = tratarConexaoCliente(socketServidor);
+        int retorno = receberETratarMensagemCliente(socketServidor, dadosSocket);
         if(retorno == ENCERRAR) { // Caso o servidor deve ser encerrado finaliza o laço de conexões de clientes
             return;
         }
     }
 }
 
-void inicializaServidor(int porta, char* versao, int i) {
-    char programa[BUFSZ];
-    sprintf("./server%d %s %d", i, versao, porta)
-    system(programa);
+void inicializaServidor(unsigned short porta, char* versao, int i) {
+    int pid = fork();
+    if(pid == -1) {
+        sairComMensagem("Erro ao executar o comando fork");
+    }
+    if(pid == 0) {
+        return;
+    }
+    char programa[15];
+    sprintf(programa, "./server%d", i);
+    char* args[4];
+    args[1] = (char*) malloc(sizeof(char)*15);
+    args[1] = (char*) malloc(sizeof(char)*10);
+    args[2] = (char*) malloc(sizeof(char)*10);
+    args[3] = NULL;
+    char portaStr[10];
+    char versaoStr[10];
+    sprintf(portaStr, "%d", porta);
+    strcpy(versaoStr, versao);
+    strcpy(args[0], programa);
+    strcpy(args[1], versaoStr);
+    strcpy(args[2], portaStr);
+    int ret = execv(programa, args);
+    if(ret < 0) {
+        sairComMensagem("Erro ao executar o comando execv");
+    }
 }
 
 int main(int argc, char** argv) {
@@ -244,21 +226,13 @@ int main(int argc, char** argv) {
     verificarParametros(argc, argv);
 
     // Converte o parâmetro da porta para unsigned short
-    unsigned short porta = (unsigned short) atoi(portaStr); // unsigned short
-
-    printf("Servidor 1\n");
+    unsigned short porta = (unsigned short) atoi(argv[2]); // unsigned short
     
     inicializaServidor(porta+1, argv[1], 2);
 
-    printf("Servidor 2\n");
-
     inicializaServidor(porta+2, argv[1], 3);
 
-    printf("Servidor 3\n");
-
     inicializaServidor(porta+3, argv[1], 4);
-
-    printf("Servidor 4\n");
 
     struct sockaddr_storage dadosSocket;
     
@@ -266,9 +240,10 @@ int main(int argc, char** argv) {
 
     int socketServidor = inicializarSocketServidor(&dadosSocket);
 
-    escutarPorConexoes(socketServidor, &dadosSocket);
+    bindServidor(socketServidor, &dadosSocket);
 
-    esperarPorConexoesCliente(socketServidor);
+    esperarPorConexoesCliente(socketServidor, dadosSocket);
 
+    close(socketServidor);
     exit(EXIT_SUCCESS);
 }
