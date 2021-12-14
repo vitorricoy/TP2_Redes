@@ -1,1 +1,3 @@
 1. Os servidores devem escrever saída na stdout ou em arquivos? É para usar fork mesmo para criar os servidores?
+
+2. Como sei onde estão os defensores? E como assim o getdefenders pode ser feito para qualquer servidor?
