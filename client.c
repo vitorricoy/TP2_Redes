@@ -120,29 +120,24 @@ void recebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct
     }
 }
 
-void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor1, 
-    struct sockaddr_storage dadosServidor2, struct sockaddr_storage dadosServidor3, struct sockaddr_storage dadosServidor4) {
-    
+void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor[4]) {
+    int i;
+
+    // Inicia o jogo
+
+    for(i=0 ; i<4; i++) {
+        char mensagem[BUFSZ];
+        strcpy(mensagem, "start\n");
+        enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
+        recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
+    }
+
     char mensagem[BUFSZ];
-    strcpy(mensagem, "start\n");
-    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor1, mensagem);
-    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor1, mensagem);
-    printf("%s\n", mensagem);
+    strcpy(mensagem, "getdefenders\n");
+    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[0], mensagem);
+    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[0], mensagem);
 
-    strcpy(mensagem, "start\n");
-    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor2, mensagem);
-    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor2, mensagem);
-    printf("%s\n", mensagem);
-
-    strcpy(mensagem, "start\n");
-    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor3, mensagem);
-    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor3, mensagem);
-    printf("%s\n", mensagem);
-
-    strcpy(mensagem, "start\n");
-    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor4, mensagem);
-    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor4, mensagem);
-    printf("%s\n", mensagem);
+    
 
     // // Laço para a comunicação do cliente com o servidor
     // while(1) {
@@ -155,23 +150,21 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
 
 int main(int argc, char **argv) {
     verificarParametros(argc, argv);
-    struct sockaddr_storage dadosServidor1;
-    struct sockaddr_storage dadosServidor2;
-    struct sockaddr_storage dadosServidor3;
-    struct sockaddr_storage dadosServidor4;
+    struct sockaddr_storage dadosServidor[4];
+    int i;
     if(argv[2] == NULL) {
         tratarParametroIncorreto(argv[0]);
     }
     // Converte o parâmetro da porta para unsigned short
     unsigned short porta = (unsigned short) atoi(argv[2]); // unsigned short
 
-    inicializarDadosSocket(argv[1], porta, &dadosServidor1, argv[0]);
-    inicializarDadosSocket(argv[1], porta+1, &dadosServidor2, argv[0]);
-    inicializarDadosSocket(argv[1], porta+2, &dadosServidor3, argv[0]);
-    inicializarDadosSocket(argv[1], porta+3, &dadosServidor4, argv[0]);
+    for(i=0; i<4; i++) {
+        inicializarDadosSocket(argv[1], porta+i, &dadosServidor[i], argv[0]);
+    }
+
     int socketClienteIPv4 = inicializarSocketClienteIPv4();
     int socketClienteIPv6 = inicializarSocketClienteIPv6();
-    comunicarComServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor1, dadosServidor2, dadosServidor3, dadosServidor4);
+    comunicarComServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor);
     close(socketClienteIPv4);
     close(socketClienteIPv6);
 	exit(EXIT_SUCCESS);

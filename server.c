@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <time.h>
 
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -18,15 +19,26 @@
 
 #define BUFSZ 512
 
+int numeroDefensores = 6;
+int numeroColunas = 4;
+
+
 struct parametroThreadServidor {
     int socket;
     struct sockaddr_storage dadosSocket;
     int id;
 };
 
+struct PosPokemon {
+    int posX;
+    int posY;
+};
+
+struct PosPokemon* posPokemonsDefensores;
+
 void tratarParametroIncorreto(char* comandoPrograma) {
     // Imprime o uso correto dos parâmetros do programa e encerra o programa
-    printf("Uso: %s <v4|v6> <porta do servidor>\n", comandoPrograma);
+    printf("Uso: %s v4|v6 porta do servidor <numero de colunas no campo> <numero de pokemons defensores>\n", comandoPrograma);
     printf("Exemplo: %s v4 51511\n", comandoPrograma);
     exit(EXIT_FAILURE);
 }
@@ -133,12 +145,69 @@ struct sockaddr_storage receberMensagem(int socketServidor, struct sockaddr_stor
     return dadosSocketCliente;
 }
 
+void gerarPokemonsDefensores() {
+    int valoresJaGeradosY[numeroDefensores];
+    int valoresJaGeradosX[numeroDefensores];
+    int i, j;
+    for(i=0; i<numeroDefensores; i++) {
+        int recalcular = 1;
+        int v1, v2;
+        while(recalcular) {
+            recalcular = 0;
+            v1 = rand()%numeroColunas;
+            v2 = rand()%5;
+            for(j=0; j<i; j++) {
+                if(v1 == valoresJaGeradosX[j] && v2 == valoresJaGeradosY[j]) {
+                    recalcular = 1;
+                    break;
+                }
+            }
+        }
+        valoresJaGeradosX[i] = v1;
+        valoresJaGeradosY[i] = v2;
+        struct PosPokemon posicaoPokemon;
+        posicaoPokemon.posX = v1;
+        posicaoPokemon.posY = v2;
+        posPokemonsDefensores[i] = posicaoPokemon;
+    }
+}
+
 int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct sockaddr_storage dadosSocketCliente, int id) {
+    printf("Recebeu mensagem %s", mensagem);
     if(strcmp(mensagem, "start\n") == 0) {
         char resposta[BUFSZ];
         strcpy(resposta, "game started: path ");
-        strcat(resposta, itoa(id));
+        char idThread[2];
+        sprintf(idThread, "%d", id+1);
+        strcat(resposta, idThread);
         enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+    }
+
+    if(strcmp(mensagem, "getdefenders\n") == 0) {
+        int i;
+        gerarPokemonsDefensores();
+        char resposta[BUFSZ];
+        strcpy(resposta, "defender [");
+        for(i=0; i<numeroDefensores; i++) {
+            char pos[10];
+            sprintf(pos, "%d", posPokemonsDefensores[i].posX);
+            strcat(resposta, "[");
+            strcat(resposta, pos);
+            strcat(resposta, ", ");
+            sprintf(pos, "%d", posPokemonsDefensores[i].posY);
+            strcat(resposta, pos);
+            if(i != numeroDefensores-1) {
+                strcat(resposta, "], ");
+            } else {
+                strcat(resposta, "]");
+            }
+        }
+        strcat(resposta, "]\n");
+        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+    }
+
+    if(strncmp("getturn ", mensagem, 8) == 0) {
+        // Eh mensagem de turno
     }
     // Identifica que o servidor deve receber o próximo recv do cliente
     return PROXIMA_COMUNICACAO;
@@ -149,8 +218,6 @@ int receberETratarMensagemCliente(int socketServidor, struct sockaddr_storage da
     struct sockaddr_storage dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
 
     int retorno = tratarMensagensRecebidas(mensagem, socketServidor, dadosSocketCliente, id);
-
-
     
     if(retorno == ENCERRAR || retorno == PROXIMO_CLIENTE) { // Se o servidor deve encerrar ou se conectar com outro cliente
         return retorno;
@@ -160,46 +227,70 @@ int receberETratarMensagemCliente(int socketServidor, struct sockaddr_storage da
 }
 
 void* esperarPorConexoesCliente(void* param) {
-    struct parametroThreadServidor parametros = (struct parametroThreadServidor*) param;
+    struct parametroThreadServidor parametros = *(struct parametroThreadServidor*) param;
     int socketServidor = parametros.socket;
     struct sockaddr_storage dadosSocket = parametros.dadosSocket;
     int id = parametros.id;
+    printf("Servidor %d esperando conexão\n", id);
     // Enquanto o servidor estiver ativo ele deve receber conexões de clientes
     while (1) {
         int retorno = receberETratarMensagemCliente(socketServidor, dadosSocket, id);
         if(retorno == ENCERRAR) { // Caso o servidor deve ser encerrado finaliza o laço de conexões de clientes
-            return;
+            pthread_exit(NULL);
         }
     }
+
+    pthread_exit(NULL);
 }
 
 int main(int argc, char** argv) {
     
     verificarParametros(argc, argv);
 
+    if(argc >= 4) {
+        numeroColunas = atoi(argv[3]);
+        if(numeroColunas <= 0) {
+            verificarParametros(argc, argv);
+        }
+    }
+
+    if(argc >= 5) {
+        numeroDefensores = atoi(argv[4]);
+        if(numeroDefensores <= 0) {
+            verificarParametros(argc, argv);
+        }
+    }
+
+    srand(time(NULL));
+
+    posPokemonsDefensores = (struct PosPokemon*) malloc(sizeof(struct PosPokemon)*numeroDefensores);
+
     struct sockaddr_storage dadosSocket[4];
+    struct parametroThreadServidor parametros[4];
     int socketServidor[4];
     pthread_t threads[4];
     int i;
     
-    for(i = 0; i < 4; i++) {
+    for(i=0; i<4; i++) {
         inicializarDadosSocket(argv[1], argv[2], &dadosSocket[i], argv[0], i);
         socketServidor[i] = inicializarSocketServidor(&dadosSocket[i]);
         bindServidor(socketServidor[i], &dadosSocket[i]);
-        struct parametroThreadServidor parametros;
-        parametros.socket = socketServidor[i];
-        parametros.dadosSocket = dadosSocket[i];
-        parametros.id = i;
-        threads[i] = pthread_create(esperarPorConexoesCliente, NULL, NULL, (void*) &parametros);
+        
+        parametros[i].socket = socketServidor[i];
+        parametros[i].dadosSocket = dadosSocket[i];
+        parametros[i].id = i;
+        pthread_create(&threads[i], NULL, esperarPorConexoesCliente, (void*) &parametros[i]);
     }
 
-    for(i = 0; i < 4; i++) {
-        pthread_join(threads[i]);
+    for(i=0; i<4; i++) {
+        pthread_join(threads[i], NULL);
     }
 
-    for(i = 0; i < 4; i++) {
+    for(i=0; i<4; i++) {
         close(socketServidor[i]);
     }
+
+    free(posPokemonsDefensores);
     
     exit(EXIT_SUCCESS);
 }
