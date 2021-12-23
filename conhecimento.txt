@@ -1,0 +1,15 @@
+1. É igual o q ta o inicio do jogo.
+
+2. Os defensores são escolhidos de forma aleatória.
+
+3. Pokemons atacam pra cima e pra baixo
+
+4. O tabuleiro é sempre com 4 linhas e N colunas
+
+5. As coordenadas são invertidas (y, x)
+
+6. Quando acaba reeinicia da primeira requisição (de game started)
+
+7. Colocar print de execuções na doc
+
+Ataques aleatorios?? Como define o N?

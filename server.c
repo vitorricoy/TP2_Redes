@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 
 #define PROXIMA_MENSAGEM 0
 #define PROXIMA_COMUNICACAO 1
@@ -16,6 +17,12 @@
 #define ENCERRAR 3
 
 #define BUFSZ 512
+
+struct parametroThreadServidor {
+    int socket;
+    struct sockaddr_storage dadosSocket;
+    int id;
+};
 
 void tratarParametroIncorreto(char* comandoPrograma) {
     // Imprime o uso correto dos parâmetros do programa e encerra o programa
@@ -31,7 +38,7 @@ void verificarParametros(int argc, char** argv) {
     }
 }
 
-void inicializarDadosSocket(const char* protocolo, const char* portaStr, struct sockaddr_storage* dadosSocket, char* comandoPrograma) {
+void inicializarDadosSocket(const char* protocolo, const char* portaStr, struct sockaddr_storage* dadosSocket, char* comandoPrograma, unsigned short numeroServidor) {
     // Caso a porta seja nula, imprime o uso correto dos parâmetros
     if(portaStr == NULL) {
         tratarParametroIncorreto(comandoPrograma);
@@ -39,6 +46,8 @@ void inicializarDadosSocket(const char* protocolo, const char* portaStr, struct 
     
     // Converte o parâmetro da porta para unsigned short
     unsigned short porta = (unsigned short) atoi(portaStr); // unsigned short
+
+    porta += numeroServidor;
 
 
     if(porta == 0) { // Se a porta dada é inválida imprime a mensagem de uso dos parâmetros
@@ -87,40 +96,6 @@ int inicializarSocketServidor(struct sockaddr_storage* dadosSocket) {
     return socketServidor;
 }
 
-// Retorna um novo ponteiro da string deslocado para o caractere após o espaço encontrado
-char* extrairStringAteEspaco(char* string, char* dest) {
-    int posicao;
-    int tamanhoString = strlen(string);
-    // Preenche o destino com o conteúdo da string até o primeiro espaço encontrado
-    for(posicao = 0; posicao < tamanhoString; posicao++) {
-        if(string[posicao] == ' ') {
-            dest[posicao] = '\0';
-            // Retorna a string deslocada para a posição depois do espaço
-            return string+posicao+1;
-        } else {
-            dest[posicao] = string[posicao];
-        }
-    }
-    // Se não encontrar um espaço retorna NULL
-    dest[posicao] = '\0';
-    return NULL;
-}
-
-int mensagemInvalida(char* mensagem) {
-    if(mensagem == NULL) {
-        return 0;
-    }
-    int tamanhoMensagem = strlen(mensagem);
-    int posicao;
-    // Verifica se 'mensagem' consiste apenas de letras minúsculas, números, espaços e '\n's
-    for(posicao = 0; posicao < tamanhoMensagem; posicao++) {
-        if((!isalnum(mensagem[posicao]) && mensagem[posicao] != ' ' && mensagem[posicao] != '\n') || (mensagem[posicao] >= 'A' && mensagem[posicao] <= 'Z')) { // letra minuscula, numero ou espaço
-            return 1;
-        }
-    }
-    return 0;
-}
-
 void enviarMensagem(char* mensagem, int socketServidor, struct sockaddr_storage dadosSocketCliente) {
     // Coloca um '\n' no fim da mensagem a ser enviada
     strcat(mensagem, "\n");
@@ -158,21 +133,22 @@ struct sockaddr_storage receberMensagem(int socketServidor, struct sockaddr_stor
     return dadosSocketCliente;
 }
 
-int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct sockaddr_storage dadosSocketCliente) {
+int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct sockaddr_storage dadosSocketCliente, int id) {
     if(strcmp(mensagem, "start\n") == 0) {
         char resposta[BUFSZ];
-        strcpy(resposta, "game started: path 3");
+        strcpy(resposta, "game started: path ");
+        strcat(resposta, itoa(id));
         enviarMensagem(resposta, socketServidor, dadosSocketCliente);
     }
     // Identifica que o servidor deve receber o próximo recv do cliente
     return PROXIMA_COMUNICACAO;
 }
 
-int receberETratarMensagemCliente(int socketServidor, struct sockaddr_storage dadosSocket) {
+int receberETratarMensagemCliente(int socketServidor, struct sockaddr_storage dadosSocket, int id) {
     char mensagem[BUFSZ];
     struct sockaddr_storage dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
 
-    int retorno = tratarMensagensRecebidas(mensagem, socketServidor, dadosSocketCliente);
+    int retorno = tratarMensagensRecebidas(mensagem, socketServidor, dadosSocketCliente, id);
 
 
     
@@ -183,10 +159,14 @@ int receberETratarMensagemCliente(int socketServidor, struct sockaddr_storage da
     return PROXIMA_COMUNICACAO;
 }
 
-void esperarPorConexoesCliente(int socketServidor, struct sockaddr_storage dadosSocket) {
+void* esperarPorConexoesCliente(void* param) {
+    struct parametroThreadServidor parametros = (struct parametroThreadServidor*) param;
+    int socketServidor = parametros.socket;
+    struct sockaddr_storage dadosSocket = parametros.dadosSocket;
+    int id = parametros.id;
     // Enquanto o servidor estiver ativo ele deve receber conexões de clientes
     while (1) {
-        int retorno = receberETratarMensagemCliente(socketServidor, dadosSocket);
+        int retorno = receberETratarMensagemCliente(socketServidor, dadosSocket, id);
         if(retorno == ENCERRAR) { // Caso o servidor deve ser encerrado finaliza o laço de conexões de clientes
             return;
         }
@@ -197,16 +177,29 @@ int main(int argc, char** argv) {
     
     verificarParametros(argc, argv);
 
-    struct sockaddr_storage dadosSocket;
+    struct sockaddr_storage dadosSocket[4];
+    int socketServidor[4];
+    pthread_t threads[4];
+    int i;
     
-    inicializarDadosSocket(argv[1], argv[2], &dadosSocket, argv[0]);
+    for(i = 0; i < 4; i++) {
+        inicializarDadosSocket(argv[1], argv[2], &dadosSocket[i], argv[0], i);
+        socketServidor[i] = inicializarSocketServidor(&dadosSocket[i]);
+        bindServidor(socketServidor[i], &dadosSocket[i]);
+        struct parametroThreadServidor parametros;
+        parametros.socket = socketServidor[i];
+        parametros.dadosSocket = dadosSocket[i];
+        parametros.id = i;
+        threads[i] = pthread_create(esperarPorConexoesCliente, NULL, NULL, (void*) &parametros);
+    }
 
-    int socketServidor = inicializarSocketServidor(&dadosSocket);
+    for(i = 0; i < 4; i++) {
+        pthread_join(threads[i]);
+    }
 
-    bindServidor(socketServidor, &dadosSocket);
-
-    esperarPorConexoesCliente(socketServidor, dadosSocket);
-
-    close(socketServidor);
+    for(i = 0; i < 4; i++) {
+        close(socketServidor[i]);
+    }
+    
     exit(EXIT_SUCCESS);
 }
