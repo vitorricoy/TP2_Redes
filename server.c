@@ -23,7 +23,7 @@ int numeroDefensores = 6;
 int numeroColunas = 4;
 
 
-struct parametroThreadServidor {
+struct ParametroThreadServidor {
     int socket;
     struct sockaddr_storage dadosSocket;
     int id;
@@ -34,7 +34,15 @@ struct PosPokemon {
     int posY;
 };
 
+struct PokemonAtacante {
+    int id;
+    char nome[BUFSZ];
+    int hits;
+};
+
 struct PosPokemon* posPokemonsDefensores;
+
+struct PokemonAtacante infoPokemonsAtacantes[BUFSZ];
 
 void tratarParametroIncorreto(char* comandoPrograma) {
     // Imprime o uso correto dos parâmetros do programa e encerra o programa
@@ -208,7 +216,20 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
 
     if(strncmp("getturn ", mensagem, 8) == 0) {
         // Eh mensagem de turno
+        char lixo[BUFSZ];
+        int idTurno;
+        sscanf(mensagem, "%s %d", lixo, &idTurno);
+        char resposta[BUFSZ];
+        sprintf(resposta, "base %d\nturn %d\n", id, idTurno);
+        // Gera os pokemons atacantes novos
+        // Vai precisar de uma lista encadeada para remover pokemons atacantes facilmente
+        for(int i=0; i<numeroColunas; i++) {
+            char temp[BUFSZ];
+            sprintf(temp, "fixedLocation %d\n", i+1);
+            
+        }
     }
+
     // Identifica que o servidor deve receber o próximo recv do cliente
     return PROXIMA_COMUNICACAO;
 }
@@ -227,7 +248,7 @@ int receberETratarMensagemCliente(int socketServidor, struct sockaddr_storage da
 }
 
 void* esperarPorConexoesCliente(void* param) {
-    struct parametroThreadServidor parametros = *(struct parametroThreadServidor*) param;
+    struct ParametroThreadServidor parametros = *(struct ParametroThreadServidor*) param;
     int socketServidor = parametros.socket;
     struct sockaddr_storage dadosSocket = parametros.dadosSocket;
     int id = parametros.id;
@@ -266,7 +287,7 @@ int main(int argc, char** argv) {
     posPokemonsDefensores = (struct PosPokemon*) malloc(sizeof(struct PosPokemon)*numeroDefensores);
 
     struct sockaddr_storage dadosSocket[4];
-    struct parametroThreadServidor parametros[4];
+    struct ParametroThreadServidor parametros[4];
     int socketServidor[4];
     pthread_t threads[4];
     int i;

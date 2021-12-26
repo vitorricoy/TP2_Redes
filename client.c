@@ -134,18 +134,19 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
 
     char mensagem[BUFSZ];
     strcpy(mensagem, "getdefenders\n");
-    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[0], mensagem);
-    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[0], mensagem);
+    int servidorAReceber = rand()%4;
+    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    printf("%s", mensagem);
 
     
-
-    // // Laço para a comunicação do cliente com o servidor
-    // while(1) {
-    //     leMensagemEntrada(mensagem);
-    //     enviaMensagemServidor(socketCliente, mensagem);
-    //     recebeMensagemServidor(socketCliente, mensagem);
-    //     printf("%s", mensagem);
-    // }
+    // Laço para a comunicação do cliente com o servidor
+    while(1) {
+        leMensagemEntrada(mensagem);
+        enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+        recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+        printf("%s", mensagem);
+    }
 }
 
 int main(int argc, char **argv) {
