@@ -1,4 +1,5 @@
 #include "common.h"
+#include "lista.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +37,8 @@ struct PosPokemon {
 
 struct PosPokemon* posPokemonsDefensores;
 
+int proximoIdAtacante = 1;
+int chegaramNaPokedex = 0;
 struct PokemonAtacante infoPokemonsAtacantes[BUFSZ];
 
 void tratarParametroIncorreto(char* comandoPrograma) {
@@ -174,6 +177,27 @@ void gerarPokemonsDefensores() {
     }
 }
 
+struct PokemonAtacante* gerarPokemonAtacante(int coluna, int linha) {
+    int tipo = rand()%4;
+    char nomePokemon[BUFSZ];
+    switch(tipo) {
+        case 0: strcpy(nomePokemon, "Mewtwo"); break;
+        case 1: strcpy(nomePokemon, "Lugia"); break;
+        case 2: strcpy(nomePokemon, "Zubat"); break;
+        default: return NULL;
+    }
+    int hits = 0;
+    int id = proximoIdAtacante;
+    proximoIdAtacante++;
+    struct PokemonAtacante* pokemon = (struct PokemonAtacante*) malloc(sizeof(struct PokemonAtacante));
+    pokemon->id = id;
+    strcpy(pokemon->nome, nomePokemon);
+    pokemon->hits = hits;
+    pokemon->coluna = coluna;
+    pokemon->linha = linha;
+    return pokemon;
+}
+
 int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct sockaddr_storage dadosSocketCliente, int id) {
     printf("Recebeu mensagem %s", mensagem);
     if(strcmp(mensagem, "start\n") == 0) {
@@ -214,14 +238,34 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
         int idTurno;
         sscanf(mensagem, "%s %d", lixo, &idTurno);
         char resposta[BUFSZ];
-        sprintf(resposta, "base %d\nturn %d\n", id, idTurno);
+        sprintf(resposta, "base %d\nturn %d\n", id+1, idTurno);
+        avancarTurno(idTurno);
+        struct PokemonAtacante* pokemonGerado = gerarPokemonAtacante(0, id);
+        if(pokemonGerado != NULL) {
+            adicionarElemento(*pokemonGerado);
+        }
+        struct PokemonAtacante* listaAtacantes = getLista();        
         // Gera os pokemons atacantes novos
         // Vai precisar de uma lista encadeada para remover pokemons atacantes facilmente
         for(int i=0; i<numeroColunas; i++) {
             char temp[BUFSZ];
             sprintf(temp, "fixedLocation %d\n", i+1);
-            
+            for(int j=0; j<getTamanho(); j++) {
+                if(listaAtacantes[j].linha == id && listaAtacantes[j].coluna == i) {
+                    char temp2[BUFSZ];
+                    sprintf(temp2, "%d %s %d\n", listaAtacantes[j].id, listaAtacantes[j].nome, listaAtacantes[j].hits);
+                    strcat(temp, temp2);
+                }
+            }
+            strcat(resposta, temp);
         }
+        for(int j=0; j<getTamanho(); j++) {
+            if(listaAtacantes[j].coluna == numeroColunas) {
+                chegaramNaPokedex++;
+                removerElemento(listaAtacantes[j]);
+            }
+        }
+        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
     }
 
     // Identifica que o servidor deve receber o próximo recv do cliente
