@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <math.h>
 #include <time.h>
 
 #include <sys/socket.h>
@@ -22,6 +23,7 @@
 
 int numeroDefensores = 6;
 int numeroColunas = 4;
+int maximoTurnos = 50;
 
 
 struct ParametroThreadServidor {
@@ -38,8 +40,14 @@ struct PosPokemon {
 struct PosPokemon* posPokemonsDefensores;
 
 int proximoIdAtacante = 1;
+int pokemonsDestruidos = 0;
 int chegaramNaPokedex = 0;
 struct PokemonAtacante infoPokemonsAtacantes[BUFSZ];
+struct sockaddr_storage dadosSockets[4];
+int socketServidores[4];
+int ambienteResetado = 1;
+time_t inicio = 0;
+int turnoAtual = -1;
 
 void tratarParametroIncorreto(char* comandoPrograma) {
     // Imprime o uso correto dos parâmetros do programa e encerra o programa
@@ -114,8 +122,6 @@ int inicializarSocketServidor(struct sockaddr_storage* dadosSocket) {
 }
 
 void enviarMensagem(char* mensagem, int socketServidor, struct sockaddr_storage dadosSocketCliente) {
-    // Coloca um '\n' no fim da mensagem a ser enviada
-    strcat(mensagem, "\n");
     // Envia o conteudo de 'mensagem' para o cliente
     size_t tamanhoMensagemEnviada = sendto(socketServidor, (const char *)mensagem, strlen(mensagem), MSG_CONFIRM, (const struct sockaddr *) &dadosSocketCliente, sizeof(dadosSocketCliente));
     if (strlen(mensagem) != tamanhoMensagemEnviada) {
@@ -198,15 +204,37 @@ struct PokemonAtacante* gerarPokemonAtacante(int coluna, int linha) {
     return pokemon;
 }
 
+void gerarResultadoGameOver(char resposta[BUFSZ], int sucesso) {
+    clock_t fim = clock();
+    double tempoGasto = (double)(fim-inicio)/CLOCKS_PER_SEC;
+    tempoGasto = ceil(tempoGasto);
+    sprintf(resposta, "gameover %d %d %d %d\n", sucesso, pokemonsDestruidos, chegaramNaPokedex, (int)tempoGasto);
+}
+
+int getHitsPokemon(char nome[BUFSZ]) {
+    if(strcmp(nome, "Mewtwo") == 0) {
+        return 3;
+    }
+    if(strcmp(nome, "Lugia") == 0) {
+        return 2;
+    }
+    return 1;
+}
+
 int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct sockaddr_storage dadosSocketCliente, int id) {
     printf("Recebeu mensagem %s", mensagem);
     if(strcmp(mensagem, "start\n") == 0) {
         char resposta[BUFSZ];
         strcpy(resposta, "game started: path ");
+        if(inicio == 0) {
+            inicio = clock();
+            ambienteResetado = 0;
+        }
         char idThread[2];
-        sprintf(idThread, "%d", id+1);
+        sprintf(idThread, "%d\n", id+1);
         strcat(resposta, idThread);
         enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+        return PROXIMA_COMUNICACAO;
     }
 
     if(strcmp(mensagem, "getdefenders\n") == 0) {
@@ -230,16 +258,40 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
         }
         strcat(resposta, "]\n");
         enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+        return PROXIMA_COMUNICACAO;
     }
 
     if(strncmp("getturn ", mensagem, 8) == 0) {
         // Eh mensagem de turno
         char lixo[BUFSZ];
         int idTurno;
+        int i, j;
         sscanf(mensagem, "%s %d", lixo, &idTurno);
         char resposta[BUFSZ];
         sprintf(resposta, "base %d\nturn %d\n", id+1, idTurno);
-        avancarTurno(idTurno);
+        int avancouTurno = 0;
+        if(turnoAtual > maximoTurnos) {
+            gerarResultadoGameOver(resposta, 0);
+            enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+            return PROXIMO_CLIENTE;
+        }
+        while(turnoAtual < idTurno) {
+            avancarTurno();
+            avancouTurno = 1;
+            turnoAtual++;
+        }
+        if(avancouTurno) {
+            for(i=0; i<4; i++) {
+                if(i != id) {
+                    int socketTemp = socket(AF_INET6, SOCK_DGRAM, 0);
+                    enviarMensagem(mensagem, socketTemp, dadosSockets[i]);
+                    char respTemp[BUFSZ];
+                    receberMensagem(socketTemp, dadosSockets[i], respTemp);
+                    close(socketTemp);
+                    enviarMensagem(respTemp, socketServidor, dadosSocketCliente);
+                }
+            }
+        }
         struct PokemonAtacante* pokemonGerado = gerarPokemonAtacante(0, id);
         if(pokemonGerado != NULL) {
             adicionarElemento(*pokemonGerado);
@@ -247,10 +299,10 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
         struct PokemonAtacante* listaAtacantes = getLista();        
         // Gera os pokemons atacantes novos
         // Vai precisar de uma lista encadeada para remover pokemons atacantes facilmente
-        for(int i=0; i<numeroColunas; i++) {
+        for(i=0; i<numeroColunas; i++) {
             char temp[BUFSZ];
             sprintf(temp, "fixedLocation %d\n", i+1);
-            for(int j=0; j<getTamanho(); j++) {
+            for(j=0; j<getTamanho(); j++) {
                 if(listaAtacantes[j].linha == id && listaAtacantes[j].coluna == i) {
                     char temp2[BUFSZ];
                     sprintf(temp2, "%d %s %d\n", listaAtacantes[j].id, listaAtacantes[j].nome, listaAtacantes[j].hits);
@@ -259,30 +311,110 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
             }
             strcat(resposta, temp);
         }
-        for(int j=0; j<getTamanho(); j++) {
+        for(j=0; j<getTamanho(); j++) {
             if(listaAtacantes[j].coluna == numeroColunas) {
                 chegaramNaPokedex++;
                 removerElemento(listaAtacantes[j]);
             }
         }
         enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+        return PROXIMA_COMUNICACAO;
     }
 
+    if(strncmp("shot ", mensagem, 5) == 0) {
+        // Eh mensagem de defesa
+        char lixo[BUFSZ];
+        int posX;
+        int posY;
+        int id;
+        int i;
+        char resposta[BUFSZ];
+        sscanf(mensagem, "%s %d %d %d", lixo, &posX, &posY, &id);
+        struct PokemonAtacante* pokemonAtacado = buscarElemento(id);
+        if(pokemonAtacado == NULL) {
+            sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 1);
+        } else {
+            struct PosPokemon* posPokemonDefensor = NULL;
+            for(i = 0; i<numeroDefensores; i++) {
+                if(posPokemonsDefensores[i].posX == posX && posPokemonsDefensores[i].posY == posY) {
+                    posPokemonDefensor = &posPokemonsDefensores[i];
+                }
+            }
+            if(posPokemonDefensor == NULL) {
+                sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 1);
+            } else {
+                if(posPokemonDefensor->posX == pokemonAtacado->coluna && (posPokemonDefensor->posY == pokemonAtacado->linha || posPokemonDefensor->posY-1 == pokemonAtacado->linha)) {
+                    pokemonAtacado->hits++;
+                    if(pokemonAtacado->hits == getHitsPokemon(pokemonAtacado->nome)) {
+                        atualizarElemento(*pokemonAtacado);
+                    } else {
+                        pokemonsDestruidos++;
+                        removerElemento(*pokemonAtacado);
+                    }
+                    sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 0);
+                } else {
+                    sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 1);
+                }
+            }
+        }
+        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+        return PROXIMA_COMUNICACAO;
+    }
+
+    if(strcmp(mensagem, "quit\n") == 0) {
+        int i;
+        for(i=0; i<4; i++) {
+            if(i != id) {
+                int socketTemp = socket(AF_INET6, SOCK_DGRAM, 0);
+                enviarMensagem(mensagem, socketTemp, dadosSockets[i]);
+                close(socketTemp);
+            }
+        }
+        return ENCERRAR;
+    }
+    char resposta[BUFSZ];
+    gerarResultadoGameOver(resposta, 1);
+    enviarMensagem(resposta, socketServidor, dadosSocketCliente);
     // Identifica que o servidor deve receber o próximo recv do cliente
-    return PROXIMA_COMUNICACAO;
+    return PROXIMO_CLIENTE;
 }
 
-int receberETratarMensagemCliente(int socketServidor, struct sockaddr_storage dadosSocket, int id) {
+int receberETratarMensagensCliente(int socketServidor, struct sockaddr_storage dadosSocket, int id) {
+    if(!ambienteResetado) {
+        ambienteResetado = 1;
+        proximoIdAtacante = 1;
+        pokemonsDestruidos = 0;
+        chegaramNaPokedex = 0;
+        inicio = 0;
+        deleteLista();
+    }
     char mensagem[BUFSZ];
     struct sockaddr_storage dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
 
-    int retorno = tratarMensagensRecebidas(mensagem, socketServidor, dadosSocketCliente, id);
-    
-    if(retorno == ENCERRAR || retorno == PROXIMO_CLIENTE) { // Se o servidor deve encerrar ou se conectar com outro cliente
-        return retorno;
+    if(strcmp(mensagem, "start\n") == 0) {
+        char resposta[BUFSZ];
+        strcpy(resposta, "game started: path ");
+        if(inicio == 0) {
+            inicio = clock();
+        }
+        char idThread[2];
+        sprintf(idThread, "%d\n", id+1);
+        strcat(resposta, idThread);
+        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+    } else {
+        char resposta[BUFSZ];
+        gerarResultadoGameOver(resposta, 1);
+        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+        return PROXIMO_CLIENTE;
     }
-    // Identifica que o servidor deve receber o próximo recv do cliente
-    return PROXIMA_COMUNICACAO;
+    while(1) {
+        struct sockaddr_storage dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
+        int retorno = tratarMensagensRecebidas(mensagem, socketServidor, dadosSocketCliente, id);
+        
+        if(retorno == ENCERRAR || retorno == PROXIMO_CLIENTE) { // Se o servidor deve encerrar ou se conectar com outro cliente
+            return retorno;
+        }
+    }
 }
 
 void* esperarPorConexoesCliente(void* param) {
@@ -293,7 +425,7 @@ void* esperarPorConexoesCliente(void* param) {
     printf("Servidor %d esperando conexão\n", id);
     // Enquanto o servidor estiver ativo ele deve receber conexões de clientes
     while (1) {
-        int retorno = receberETratarMensagemCliente(socketServidor, dadosSocket, id);
+        int retorno = receberETratarMensagensCliente(socketServidor, dadosSocket, id);
         if(retorno == ENCERRAR) { // Caso o servidor deve ser encerrado finaliza o laço de conexões de clientes
             pthread_exit(NULL);
         }
@@ -324,19 +456,17 @@ int main(int argc, char** argv) {
 
     posPokemonsDefensores = (struct PosPokemon*) malloc(sizeof(struct PosPokemon)*numeroDefensores);
 
-    struct sockaddr_storage dadosSocket[4];
     struct ParametroThreadServidor parametros[4];
-    int socketServidor[4];
     pthread_t threads[4];
     int i;
     
     for(i=0; i<4; i++) {
-        inicializarDadosSocket(argv[1], argv[2], &dadosSocket[i], argv[0], i);
-        socketServidor[i] = inicializarSocketServidor(&dadosSocket[i]);
-        bindServidor(socketServidor[i], &dadosSocket[i]);
+        inicializarDadosSocket(argv[1], argv[2], &dadosSockets[i], argv[0], i);
+        socketServidores[i] = inicializarSocketServidor(&dadosSockets[i]);
+        bindServidor(socketServidores[i], &dadosSockets[i]);
         
-        parametros[i].socket = socketServidor[i];
-        parametros[i].dadosSocket = dadosSocket[i];
+        parametros[i].socket = socketServidores[i];
+        parametros[i].dadosSocket = dadosSockets[i];
         parametros[i].id = i;
         pthread_create(&threads[i], NULL, esperarPorConexoesCliente, (void*) &parametros[i]);
     }
@@ -346,10 +476,10 @@ int main(int argc, char** argv) {
     }
 
     for(i=0; i<4; i++) {
-        close(socketServidor[i]);
+        close(socketServidores[i]);
     }
 
     free(posPokemonsDefensores);
-    
+    deleteLista();
     exit(EXIT_SUCCESS);
 }

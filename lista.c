@@ -16,7 +16,6 @@ struct No {
     struct No* ant;
 };
 
-int turnoAtual = 0;
 struct No sentinela;
 int tamanho = 0;
 
@@ -29,6 +28,7 @@ void adicionarElemento(struct PokemonAtacante elemento) {
         sentinela.prox = novoNo;
         sentinela.ant = novoNo;
         novoNo->ant = &sentinela;
+        novoNo->prox = &sentinela;
     } else {
         sentinela.ant->prox = novoNo;
         novoNo->ant = sentinela.ant;
@@ -52,6 +52,17 @@ void removerElemento(struct PokemonAtacante removido) {
     }
 }
 
+struct PokemonAtacante* buscarElemento(int id) {
+    struct No* proximo = sentinela.prox;
+    while(proximo != NULL) {
+        if(proximo->valor.id == id) {
+            return &proximo->valor;
+        }
+        proximo = proximo->prox;
+    }
+    return NULL;
+}
+
 void atualizarElemento(struct PokemonAtacante novoValor) {
     struct No* proximo = sentinela.prox;
     while(proximo != NULL) {
@@ -68,21 +79,20 @@ int getTamanho() {
     return tamanho;
 }
 
-void avancarTurno(int numTurno) {
-    if(numTurno > turnoAtual) {
-        turnoAtual++;
-        struct No* noAtual = sentinela.prox;
-        for(int i = 0; i<tamanho; i++) {
-            noAtual->valor.coluna++;
-            noAtual = noAtual->prox;
-        }
+void avancarTurno() {
+    int i;
+    struct No* noAtual = sentinela.prox;
+    for(i = 0; i<tamanho; i++) {
+        noAtual->valor.coluna++;
+        noAtual = noAtual->prox;
     }
 }
 
 struct PokemonAtacante* getLista() {
+    int i;
     struct PokemonAtacante* ret = (struct PokemonAtacante*) malloc(sizeof(struct PokemonAtacante)*tamanho);
     struct No* noAtual = sentinela.prox;
-    for(int i = 0; i<tamanho; i++) {
+    for(i = 0; i<tamanho; i++) {
         ret[i] = noAtual->valor;
         noAtual = noAtual->prox;
     }
@@ -90,11 +100,14 @@ struct PokemonAtacante* getLista() {
 }
 
 void deleteLista() {
+    int i;
     struct No* noAtual = sentinela.prox;
     struct No* proximo = noAtual->prox;
-    for(int i = 0; i<tamanho; i++) {
+    for(i = 0; i<tamanho; i++) {
         free(noAtual);
         noAtual = proximo;
-        proximo = noAtual->prox;
+        if(noAtual != NULL) {
+            proximo = noAtual->prox;
+        }
     }
 }

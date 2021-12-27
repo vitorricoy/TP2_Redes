@@ -1,0 +1,3 @@
+Se avançar dois turnos, o servidor avança sem ataques, ou seja, os pokemons adversarios andam e os defensores fazem nada. Por exemplo ao executar getturn 0 e getturn 2, o turno 1 passa sem ações dos defensores
+
+Quando recebe ações que sincronizam tudo e tem varias respostas (getturn), o cliente recebe 4 mensagens do mesmo servidor com as respostas de cada um deles.

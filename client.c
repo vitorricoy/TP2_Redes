@@ -139,12 +139,13 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
     recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
     printf("%s", mensagem);
 
+    strcpy(mensagem, "getturn 0\n");
+    servidorAReceber = rand()%4;
+    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+
     for(i=0 ; i<4; i++) {
-        char mensagem[BUFSZ];
-        strcpy(mensagem, "getturn 0\n");
-        enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
-        recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
-        printf("%s", mensagem);
+        printf("Esperando mensagem %d\n", i);
+        recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
     }
     
     // Laço para a comunicação do cliente com o servidor

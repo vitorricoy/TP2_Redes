@@ -1,3 +1,5 @@
+#define BUFSZ 512
+
 struct PokemonAtacante {
     int id;
     char nome[BUFSZ];
@@ -12,10 +14,12 @@ void removerElemento(struct PokemonAtacante removido);
 
 void atualizarElemento(struct PokemonAtacante novoValor);
 
+struct PokemonAtacante* buscarElemento(int id);
+
 int getTamanho();
 
 struct PokemonAtacante* getLista();
 
 void deleteLista();
 
-void avancarTurno(int numTurno);
+void avancarTurno();

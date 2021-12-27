@@ -1,7 +1,8 @@
 all:
-	gcc -Wall -c common.c
+	gcc -Wall -g -c common.c
+	gcc -Wall -g -c lista.c
 	gcc -Wall client.c common.o -g -o client
-	gcc -Wall server.c common.o -o server -pthread
+	gcc -Wall -g server.c common.o lista.o -o server -pthread -lm
 
 clean:
-	rm common.o client server1 server2 server3 server4
+	rm common.o lista.o client server
