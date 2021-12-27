@@ -6,6 +6,8 @@ struct PokemonAtacante {
     int id;
     char nome[BUFSZ];
     int hits;
+    int coluna;
+    int linha;
 };
 
 struct No {
@@ -14,6 +16,7 @@ struct No {
     struct No* ant;
 };
 
+int turnoAtual = 0;
 struct No sentinela;
 int tamanho = 0;
 
@@ -49,8 +52,31 @@ void removerElemento(struct PokemonAtacante removido) {
     }
 }
 
+void atualizarElemento(struct PokemonAtacante novoValor) {
+    struct No* proximo = sentinela.prox;
+    while(proximo != NULL) {
+        if(proximo->valor.id == novoValor.id) {
+            // Atualiza e sai
+            proximo->valor = novoValor;
+            return;
+        }
+        proximo = proximo->prox;
+    }
+}
+
 int getTamanho() {
     return tamanho;
+}
+
+void avancarTurno(int numTurno) {
+    if(numTurno > turnoAtual) {
+        turnoAtual++;
+        struct No* noAtual = sentinela.prox;
+        for(int i = 0; i<tamanho; i++) {
+            noAtual->valor.coluna++;
+            noAtual = noAtual->prox;
+        }
+    }
 }
 
 struct PokemonAtacante* getLista() {
