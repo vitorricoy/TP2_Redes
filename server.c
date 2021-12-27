@@ -34,12 +34,6 @@ struct PosPokemon {
     int posY;
 };
 
-struct PokemonAtacante {
-    int id;
-    char nome[BUFSZ];
-    int hits;
-};
-
 struct PosPokemon* posPokemonsDefensores;
 
 struct PokemonAtacante infoPokemonsAtacantes[BUFSZ];
