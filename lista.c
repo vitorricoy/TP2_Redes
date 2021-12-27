@@ -52,7 +52,7 @@ void removerElemento(struct PokemonAtacante removido) {
     }
 }
 
-struct PokemonAtacante* buscarElemento(int id) {
+struct PokemonAtacante* buscarElementoId(int id) {
     struct No* proximo = sentinela.prox;
     while(proximo != NULL) {
         if(proximo->valor.id == id) {
@@ -61,6 +61,18 @@ struct PokemonAtacante* buscarElemento(int id) {
         proximo = proximo->prox;
     }
     return NULL;
+}
+
+struct PokemonAtacante* buscarElementoPos(int pos) {
+    struct No* proximo = sentinela.prox;
+    int i;
+    for(i=0; i<pos-1; i++) {
+        if(proximo == NULL) {
+            return NULL;
+        }
+        proximo = proximo->prox;
+    }
+    return proximo;
 }
 
 void atualizarElemento(struct PokemonAtacante novoValor) {

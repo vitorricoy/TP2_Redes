@@ -20,10 +20,10 @@
 #define ENCERRAR 3
 
 #define BUFSZ 512
+#define MAX_TURNOS 50
 
 int numeroDefensores = 6;
 int numeroColunas = 4;
-int maximoTurnos = 50;
 
 
 struct ParametroThreadServidor {
@@ -32,12 +32,12 @@ struct ParametroThreadServidor {
     int id;
 };
 
-struct PosPokemon {
+struct PosPokemonDefensor {
     int posX;
     int posY;
 };
 
-struct PosPokemon* posPokemonsDefensores;
+struct PosPokemonDefensor* posPokemonsDefensores;
 
 int proximoIdAtacante = 1;
 int pokemonsDestruidos = 0;
@@ -176,7 +176,7 @@ void gerarPokemonsDefensores() {
         }
         valoresJaGeradosX[i] = v1;
         valoresJaGeradosY[i] = v2;
-        struct PosPokemon posicaoPokemon;
+        struct PosPokemonDefensor posicaoPokemon;
         posicaoPokemon.posX = v1;
         posicaoPokemon.posY = v2;
         posPokemonsDefensores[i] = posicaoPokemon;
@@ -268,9 +268,9 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
         int i, j;
         sscanf(mensagem, "%s %d", lixo, &idTurno);
         char resposta[BUFSZ];
-        sprintf(resposta, "base %d\nturn %d\n", id+1, idTurno);
+        sprintf(resposta, "base %d\n", id+1);
         int avancouTurno = 0;
-        if(turnoAtual > maximoTurnos) {
+        if(turnoAtual > MAX_TURNOS) {
             gerarResultadoGameOver(resposta, 0);
             enviarMensagem(resposta, socketServidor, dadosSocketCliente);
             return PROXIMO_CLIENTE;
@@ -301,7 +301,7 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
         // Vai precisar de uma lista encadeada para remover pokemons atacantes facilmente
         for(i=0; i<numeroColunas; i++) {
             char temp[BUFSZ];
-            sprintf(temp, "fixedLocation %d\n", i+1);
+            sprintf(temp, "turn %d\nfixedLocation %d\n", idTurno, i+1);
             for(j=0; j<getTamanho(); j++) {
                 if(listaAtacantes[j].linha == id && listaAtacantes[j].coluna == i) {
                     char temp2[BUFSZ];
@@ -310,6 +310,7 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
                 }
             }
             strcat(resposta, temp);
+            strcat(resposta, "\n");
         }
         for(j=0; j<getTamanho(); j++) {
             if(listaAtacantes[j].coluna == numeroColunas) {
@@ -330,11 +331,11 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
         int i;
         char resposta[BUFSZ];
         sscanf(mensagem, "%s %d %d %d", lixo, &posX, &posY, &id);
-        struct PokemonAtacante* pokemonAtacado = buscarElemento(id);
+        struct PokemonAtacante* pokemonAtacado = buscarElementoId(id);
         if(pokemonAtacado == NULL) {
             sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 1);
         } else {
-            struct PosPokemon* posPokemonDefensor = NULL;
+            struct PosPokemonDefensor* posPokemonDefensor = NULL;
             for(i = 0; i<numeroDefensores; i++) {
                 if(posPokemonsDefensores[i].posX == posX && posPokemonsDefensores[i].posY == posY) {
                     posPokemonDefensor = &posPokemonsDefensores[i];
@@ -454,7 +455,7 @@ int main(int argc, char** argv) {
 
     srand(time(NULL));
 
-    posPokemonsDefensores = (struct PosPokemon*) malloc(sizeof(struct PosPokemon)*numeroDefensores);
+    posPokemonsDefensores = (struct PosPokemonDefensor*) malloc(sizeof(struct PosPokemonDefensor)*numeroDefensores);
 
     struct ParametroThreadServidor parametros[4];
     pthread_t threads[4];

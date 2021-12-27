@@ -14,7 +14,9 @@ void removerElemento(struct PokemonAtacante removido);
 
 void atualizarElemento(struct PokemonAtacante novoValor);
 
-struct PokemonAtacante* buscarElemento(int id);
+struct PokemonAtacante* buscarElementoId(int id);
+
+struct PokemonAtacante* buscarElementoPos(int pos);
 
 int getTamanho();
 
