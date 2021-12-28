@@ -127,6 +127,16 @@ void recebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct
     }
 }
 
+int getHitsPokemon(char nome[BUFSZ]) {
+    if(strcmp(nome, "Mewtwo") == 0) {
+        return 3;
+    }
+    if(strcmp(nome, "Lugia") == 0) {
+        return 2;
+    }
+    return 1;
+}
+
 void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor[4]) {
     int i, j, k;
 
@@ -143,7 +153,7 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
     int servidorAReceber = rand()%4;
     enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
     recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
-    int tamMsg = len(mensagem);
+    int tamMsg = strlen(mensagem);
     int contVirgulas = 0;
     for(i=0; i<tamMsg; i++) {
         if(mensagem[i] == ',') {
@@ -152,7 +162,7 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
     }
     int numeroDefensores = (contVirgulas+1)/2;
     struct PosPokemonDefensor defensores[numeroDefensores];
-    int offset = 1;
+    int offset = 10;
     for(i=0; i<numeroDefensores; i++) {
         int lido;
         sscanf(mensagem+offset, "[%d, %d]%n", &defensores[i].posX, &defensores[i].posY, &lido);
@@ -162,7 +172,7 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
         }
     }
     for(i=0; i<=MAX_TURNOS; i++) {
-        deleteLista();
+        apagaLista();
         sprintf(mensagem, "%s %d\n", "getturn", i);
         servidorAReceber = rand()%4;
         enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
@@ -172,19 +182,22 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
             char* parte;
             parte = strtok(mensagem, "\n");
             int idLinha, idColuna;
-            sscanf(parte, "%s %d", lixo, idLinha);
+            sscanf(parte, "%s %d", lixo, &idLinha);
+            parte = strtok(NULL, "\n");
             while(parte != NULL) {
-                sscanf(parte, "%s %d", lixo, idColuna);
                 parte = strtok(NULL, "\n");
-                while(strcmp(parte, "") != 0) {
+                sscanf(parte, "%s %d", lixo, &idColuna);
+                parte = strtok(NULL, "\n");
+                while(parte != NULL && strncmp("turn ", parte, 5) != 0) {
                     struct PokemonAtacante* pokemonAtacante = (struct PokemonAtacante*) malloc(sizeof(struct PokemonAtacante));
                     int id, hits;
                     char nome[BUFSZ];
                     sscanf(parte, "%d %s %d", &id, nome, &hits);
-                    pokemonAtacante->coluna = idColuna;
-                    pokemonAtacante->linha = idLinha;
+                    pokemonAtacante->coluna = idColuna-1;
+                    pokemonAtacante->linha = idLinha-1;
                     pokemonAtacante->hits = hits;
                     pokemonAtacante->id = id;
+                    printf("%s: %s\n", parte, nome);
                     strcpy(pokemonAtacante->nome, nome);
                     adicionarElemento(*pokemonAtacante);
                     parte = strtok(NULL, "\n");
@@ -195,23 +208,32 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
         for(j=0; j<numeroDefensores; j++) {
             for(k=0; k<getTamanho(); k++) {
                 struct PosPokemonDefensor defensor = defensores[j];
-                struct PokemonAtacante atacante = buscarElementoPos(k);
-                if(defensor.posX == atacante.coluna && (defensor.posY == atacante.linha || defensor.posY-1 == atacante.linha)) {
+                struct PokemonAtacante atacante = *buscarElementoPos(k);
+                if(getHitsPokemon(atacante.nome) < atacante.hits && defensor.posX == atacante.coluna && (defensor.posY == atacante.linha || defensor.posY-1 == atacante.linha)) {
                     // Gera mensagem de ataque
                     char mensagemAtaque[BUFSZ];
-                    sprintf(mensagemAtaque, "shot %d %d %d\n", defensor.posX, defensor.posY, atacante.id);
-                    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
-                    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagemAtaque);
-                    int posx, posY, id, status;
-                    sscanf("%s %d %d %d %d", lixo, &posX, &posY, &id, &status);
+                    sprintf(mensagemAtaque, "shot %d %d %d\n", defensor.posX+1, defensor.posY+1, atacante.id);
+                    printf("Atirando de (%d, %d) em (%d, %d)\n", defensor.posX, defensor.posY, atacante.coluna, atacante.linha);
+                    printf("shot %d %d %d\n", defensor.posX+1, defensor.posY+1, atacante.id);
+                    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante.linha], mensagemAtaque);
+                    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante.linha], mensagemAtaque);
+                    int posX, posY, id, status;
+                    sscanf(mensagemAtaque, "%s %d %d %d %d", lixo, &posX, &posY, &id, &status);
                     if(status != 0) {
                         sairComMensagem("Erro ao atirar em pokemons atacantes");
                     }
+                    atacante.hits++;
+                    atualizarElemento(atacante);
                     break;
                 }
             }
         }
     }
+    apagaLista();
+    sprintf(mensagem, "%s %d\n", "getturn", MAX_TURNOS+1);
+    servidorAReceber = rand()%4;
+    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
     strcpy(mensagem, "quit\n");
     enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
 }

@@ -22,6 +22,6 @@ int getTamanho();
 
 struct PokemonAtacante* getLista();
 
-void deleteLista();
+void apagaLista();
 
 void avancarTurno();

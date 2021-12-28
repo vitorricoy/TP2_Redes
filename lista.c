@@ -72,7 +72,7 @@ struct PokemonAtacante* buscarElementoPos(int pos) {
         }
         proximo = proximo->prox;
     }
-    return proximo;
+    return &proximo->valor;
 }
 
 void atualizarElemento(struct PokemonAtacante novoValor) {
@@ -111,15 +111,22 @@ struct PokemonAtacante* getLista() {
     return ret;
 }
 
-void deleteLista() {
+void apagaLista() {
     int i;
     struct No* noAtual = sentinela.prox;
+    if(noAtual == NULL) {
+        return;
+    }
     struct No* proximo = noAtual->prox;
     for(i = 0; i<tamanho; i++) {
         free(noAtual);
         noAtual = proximo;
-        if(noAtual != NULL) {
-            proximo = noAtual->prox;
+        if(noAtual == NULL) {
+            break;
         }
+        proximo = noAtual->prox;
     }
+    sentinela.prox = NULL;
+    sentinela.ant = NULL;
+    tamanho = 0;
 }

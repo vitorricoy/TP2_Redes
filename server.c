@@ -22,7 +22,7 @@
 #define BUFSZ 512
 #define MAX_TURNOS 50
 
-int numeroDefensores = 6;
+int numeroDefensores = 20;
 int numeroColunas = 4;
 
 
@@ -223,20 +223,6 @@ int getHitsPokemon(char nome[BUFSZ]) {
 
 int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct sockaddr_storage dadosSocketCliente, int id) {
     printf("Recebeu mensagem %s", mensagem);
-    if(strcmp(mensagem, "start\n") == 0) {
-        char resposta[BUFSZ];
-        strcpy(resposta, "game started: path ");
-        if(inicio == 0) {
-            inicio = clock();
-            ambienteResetado = 0;
-        }
-        char idThread[2];
-        sprintf(idThread, "%d\n", id+1);
-        strcat(resposta, idThread);
-        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
-        return PROXIMA_COMUNICACAO;
-    }
-
     if(strcmp(mensagem, "getdefenders\n") == 0) {
         int i;
         gerarPokemonsDefensores();
@@ -273,7 +259,7 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
         if(turnoAtual > MAX_TURNOS) {
             gerarResultadoGameOver(resposta, 0);
             enviarMensagem(resposta, socketServidor, dadosSocketCliente);
-            return PROXIMO_CLIENTE;
+            return PROXIMA_COMUNICACAO;
         }
         while(turnoAtual < idTurno) {
             avancarTurno();
@@ -331,9 +317,11 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
         int i;
         char resposta[BUFSZ];
         sscanf(mensagem, "%s %d %d %d", lixo, &posX, &posY, &id);
+        posX--; posY--;
         struct PokemonAtacante* pokemonAtacado = buscarElementoId(id);
         if(pokemonAtacado == NULL) {
-            sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 1);
+            printf("Nao achou atacado\n");
+            sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, id, 1);
         } else {
             struct PosPokemonDefensor* posPokemonDefensor = NULL;
             for(i = 0; i<numeroDefensores; i++) {
@@ -342,7 +330,8 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
                 }
             }
             if(posPokemonDefensor == NULL) {
-                sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 1);
+                printf("Nao achou defensor\n");
+                sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, id, 1);
             } else {
                 if(posPokemonDefensor->posX == pokemonAtacado->coluna && (posPokemonDefensor->posY == pokemonAtacado->linha || posPokemonDefensor->posY-1 == pokemonAtacado->linha)) {
                     pokemonAtacado->hits++;
@@ -352,9 +341,9 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
                         pokemonsDestruidos++;
                         removerElemento(*pokemonAtacado);
                     }
-                    sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 0);
+                    sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, id, 0);
                 } else {
-                    sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX, posY, id, 1);
+                    sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, id, 1);
                 }
             }
         }
@@ -387,7 +376,7 @@ int receberETratarMensagensCliente(int socketServidor, struct sockaddr_storage d
         pokemonsDestruidos = 0;
         chegaramNaPokedex = 0;
         inicio = 0;
-        deleteLista();
+        apagaLista();
     }
     char mensagem[BUFSZ];
     struct sockaddr_storage dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
@@ -481,6 +470,6 @@ int main(int argc, char** argv) {
     }
 
     free(posPokemonsDefensores);
-    deleteLista();
+    apagaLista();
     exit(EXIT_SUCCESS);
 }
