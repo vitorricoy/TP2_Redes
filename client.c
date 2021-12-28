@@ -209,7 +209,7 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
             for(k=0; k<getTamanho(); k++) {
                 struct PosPokemonDefensor defensor = defensores[j];
                 struct PokemonAtacante atacante = *buscarElementoPos(k);
-                if(getHitsPokemon(atacante.nome) < atacante.hits && defensor.posX == atacante.coluna && (defensor.posY == atacante.linha || defensor.posY-1 == atacante.linha)) {
+                if(getHitsPokemon(atacante.nome) > atacante.hits && defensor.posX == atacante.coluna && (defensor.posY == atacante.linha || defensor.posY-1 == atacante.linha)) {
                     // Gera mensagem de ataque
                     char mensagemAtaque[BUFSZ];
                     sprintf(mensagemAtaque, "shot %d %d %d\n", defensor.posX+1, defensor.posY+1, atacante.id);
