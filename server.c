@@ -270,6 +270,7 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
             for(i=0; i<4; i++) {
                 if(i != id) {
                     int socketTemp = socket(AF_INET6, SOCK_DGRAM, 0);
+                    // TODO: colocar suporte à perda e colocar um envio apenas de resposta
                     enviarMensagem(mensagem, socketTemp, dadosSockets[i]);
                     char respTemp[BUFSZ];
                     receberMensagem(socketTemp, dadosSockets[i], respTemp);
@@ -336,10 +337,10 @@ int tratarMensagensRecebidas(char mensagem[BUFSZ], int socketServidor, struct so
                 if(posPokemonDefensor->posX == pokemonAtacado->coluna && (posPokemonDefensor->posY == pokemonAtacado->linha || posPokemonDefensor->posY-1 == pokemonAtacado->linha)) {
                     pokemonAtacado->hits++;
                     if(pokemonAtacado->hits == getHitsPokemon(pokemonAtacado->nome)) {
-                        atualizarElemento(*pokemonAtacado);
-                    } else {
                         pokemonsDestruidos++;
                         removerElemento(*pokemonAtacado);
+                    } else {
+                        atualizarElemento(*pokemonAtacado);
                     }
                     sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, id, 0);
                 } else {

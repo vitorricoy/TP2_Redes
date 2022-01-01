@@ -32,6 +32,7 @@ void adicionarElemento(struct PokemonAtacante elemento) {
     } else {
         sentinela.ant->prox = novoNo;
         novoNo->ant = sentinela.ant;
+        novoNo->prox = &sentinela;
         sentinela.ant = novoNo;
     }
     tamanho++;

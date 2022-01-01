@@ -8,6 +8,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <errno.h>
 #include <arpa/inet.h>
 
 #define BUFSZ 512
@@ -64,6 +65,10 @@ int inicializarSocketClienteIPv4() {
     if(socketCliente < 0) {
         sairComMensagem("Erro ao criar o socket");
     }
+    struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
+    if (setsockopt(socketCliente, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        perror("Erro ao definir as configuracoes do socket");
+    }
     return socketCliente;
 }
 
@@ -71,6 +76,10 @@ int inicializarSocketClienteIPv6() {
     int socketCliente = socket(AF_INET6, SOCK_DGRAM, 0);
     if(socketCliente < 0) {
         sairComMensagem("Erro ao criar o socket");
+    }
+    struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
+    if (setsockopt(socketCliente, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        perror("Erro ao definir as configuracoes do socket");
     }
     return socketCliente;
 }
@@ -85,7 +94,7 @@ void leMensagemEntrada(char mensagem[BUFSZ]) {
     }
 }
 
-void enviaMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
+void enviaERecebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
     int socketCliente;
     if(dadosServidor.ss_family == AF_INET) {
         socketCliente = socketClienteIPv4;
@@ -94,10 +103,29 @@ void enviaMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct 
     }
     // Envia o parâmetro 'mensagem' para o servidor
     size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), MSG_CONFIRM, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
-    if (strlen(mensagem) != tamanhoMensagemEnviada) {
+    if(strlen(mensagem) != tamanhoMensagemEnviada) {
         sairComMensagem("Erro ao enviar mensagem");
     }
     printf("> %s", mensagem);
+    char mensagemResposta[BUFSZ];
+    memset(mensagemResposta, 0, BUFSZ);
+    socklen_t len = sizeof(dadosServidor);
+    size_t tamanhoMensagem;
+    while(tamanhoMensagem = recvfrom(socketCliente, (char *)mensagemResposta, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len) == -1) {
+        if(errno != EAGAIN && errno != EWOULDBLOCK) {
+            perror("Erro ao receber mensagem de resposta");
+        }
+        printf("Timeout no recvfrom\n");
+        size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), MSG_CONFIRM, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
+        if (strlen(mensagem) != tamanhoMensagemEnviada) {
+            sairComMensagem("Erro ao enviar mensagem");
+        }
+        printf("> %s", mensagem);
+        memset(mensagemResposta, 0, BUFSZ);
+    }
+    mensagemResposta[tamanhoMensagem] = '\0';
+    printf("< %s\n", mensagemResposta);
+    memcpy(mensagem, mensagemResposta, BUFSZ);
 }
 
 void recebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
@@ -107,24 +135,7 @@ void recebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct
     } else {
         socketCliente = socketClienteIPv6;
     }
-    memset(mensagem, 0, BUFSZ);
-    size_t tamanhoMensagem = 0;
-    // Recebe mensagens do servidor enquanto elas não terminarem com \n
-    do {
-        socklen_t len = sizeof(dadosServidor);
-        size_t tamanhoLidoAgora = recvfrom(socketCliente, (char *)mensagem, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len);
-        if(tamanhoLidoAgora == 0) {
-            break;
-        }
-        tamanhoMensagem += tamanhoLidoAgora;
-    } while(mensagem[strlen(mensagem)-1] != '\n');
-    mensagem[tamanhoMensagem] = '\0';
-    printf("< %s\n", mensagem);
-    // Caso a mensagem lida tenha tamanho zero, o servidor foi desconectado
-    if(strlen(mensagem) == 0) {
-        // Conexão caiu
-        exit(EXIT_SUCCESS);
-    }
+    
 }
 
 int getHitsPokemon(char nome[BUFSZ]) {
