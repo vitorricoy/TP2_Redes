@@ -1,10 +1,10 @@
 #include <stdlib.h>
 
-#define BUFSZ 512
+#define TAMANHO_NOME 32
 
 struct PokemonAtacante {
     int id;
-    char nome[BUFSZ];
+    char nome[TAMANHO_NOME];
     int hits;
     int coluna;
     int linha;

@@ -4,8 +4,9 @@
 
 #include <arpa/inet.h>
 
+#define TAMANHO_NOME 32
+
 // Encerra o programa com a mensagem 'msg'
 void sairComMensagem(char *msg);
 
-// Converte um endereço de socket para string
-void converterEnderecoParaString(struct sockaddr *endereco, char *string, size_t tamanhoString);
+int getHitsPokemon(char nome[TAMANHO_NOME]);

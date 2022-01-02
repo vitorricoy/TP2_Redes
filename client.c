@@ -11,8 +11,10 @@
 #include <errno.h>
 #include <arpa/inet.h>
 
+#define TAMANHO_NOME 32
 #define BUFSZ 512
 #define MAX_TURNOS 50
+#define NUMERO_COLUNAS 4
 
 struct PosPokemonDefensor {
     int posX;
@@ -102,7 +104,7 @@ void enviaERecebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, 
         socketCliente = socketClienteIPv6;
     }
     // Envia o parâmetro 'mensagem' para o servidor
-    size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), MSG_CONFIRM, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
+    size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), 0, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
     if(strlen(mensagem) != tamanhoMensagemEnviada) {
         sairComMensagem("Erro ao enviar mensagem");
     }
@@ -110,42 +112,23 @@ void enviaERecebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, 
     char mensagemResposta[BUFSZ];
     memset(mensagemResposta, 0, BUFSZ);
     socklen_t len = sizeof(dadosServidor);
-    size_t tamanhoMensagem;
-    while(tamanhoMensagem = recvfrom(socketCliente, (char *)mensagemResposta, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len) == -1) {
+    size_t tamanhoMensagem = recvfrom(socketCliente, (char *)mensagemResposta, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len);
+    while(tamanhoMensagem == -1) {
         if(errno != EAGAIN && errno != EWOULDBLOCK) {
             perror("Erro ao receber mensagem de resposta");
         }
         printf("Timeout no recvfrom\n");
-        size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), MSG_CONFIRM, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
+        size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), 0, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
         if (strlen(mensagem) != tamanhoMensagemEnviada) {
             sairComMensagem("Erro ao enviar mensagem");
         }
         printf("> %s", mensagem);
         memset(mensagemResposta, 0, BUFSZ);
-    }
+        tamanhoMensagem = recvfrom(socketCliente, (char *)mensagemResposta, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len);
+    } 
     mensagemResposta[tamanhoMensagem] = '\0';
-    printf("< %s\n", mensagemResposta);
+    printf("< %s", mensagemResposta);
     memcpy(mensagem, mensagemResposta, BUFSZ);
-}
-
-void recebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
-    int socketCliente;
-    if(dadosServidor.ss_family == AF_INET) {
-        socketCliente = socketClienteIPv4;
-    } else {
-        socketCliente = socketClienteIPv6;
-    }
-    
-}
-
-int getHitsPokemon(char nome[BUFSZ]) {
-    if(strcmp(nome, "Mewtwo") == 0) {
-        return 3;
-    }
-    if(strcmp(nome, "Lugia") == 0) {
-        return 2;
-    }
-    return 1;
 }
 
 void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor[4]) {
@@ -155,15 +138,13 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
     char mensagem[BUFSZ];
     for(i=0 ; i<4; i++) {
         strcpy(mensagem, "start\n");
-        enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
-        recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
+        enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
     }
 
     char lixo[BUFSZ];
     strcpy(mensagem, "getdefenders\n");
     int servidorAReceber = rand()%4;
-    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
-    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
     int tamMsg = strlen(mensagem);
     int contVirgulas = 0;
     for(i=0; i<tamMsg; i++) {
@@ -184,12 +165,10 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
     }
     for(i=0; i<=MAX_TURNOS; i++) {
         apagaLista();
-        sprintf(mensagem, "%s %d\n", "getturn", i);
-        servidorAReceber = rand()%4;
-        enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
 
         for(j=0; j<4; j++) {
-            recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+            sprintf(mensagem, "%s %d\n", "getturn", i);
+            enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[j], mensagem);
             char* parte;
             parte = strtok(mensagem, "\n");
             int idLinha, idColuna;
@@ -202,7 +181,7 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
                 while(parte != NULL && strncmp("turn ", parte, 5) != 0) {
                     struct PokemonAtacante* pokemonAtacante = (struct PokemonAtacante*) malloc(sizeof(struct PokemonAtacante));
                     int id, hits;
-                    char nome[BUFSZ];
+                    char nome[TAMANHO_NOME];
                     sscanf(parte, "%d %s %d", &id, nome, &hits);
                     pokemonAtacante->coluna = idColuna-1;
                     pokemonAtacante->linha = idLinha-1;
@@ -226,8 +205,7 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
                     sprintf(mensagemAtaque, "shot %d %d %d\n", defensor.posX+1, defensor.posY+1, atacante.id);
                     printf("Atirando de (%d, %d) em (%d, %d)\n", defensor.posX, defensor.posY, atacante.coluna, atacante.linha);
                     printf("shot %d %d %d\n", defensor.posX+1, defensor.posY+1, atacante.id);
-                    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante.linha], mensagemAtaque);
-                    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante.linha], mensagemAtaque);
+                    enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante.linha], mensagemAtaque);
                     int posX, posY, id, status;
                     sscanf(mensagemAtaque, "%s %d %d %d %d", lixo, &posX, &posY, &id, &status);
                     if(status != 0) {
@@ -243,10 +221,9 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
     apagaLista();
     sprintf(mensagem, "%s %d\n", "getturn", MAX_TURNOS+1);
     servidorAReceber = rand()%4;
-    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
-    recebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
     strcpy(mensagem, "quit\n");
-    enviaMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
 }
 
 int main(int argc, char **argv) {

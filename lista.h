@@ -1,8 +1,10 @@
-#define BUFSZ 512
+#pragma once
+
+#define TAMANHO_NOME 32
 
 struct PokemonAtacante {
     int id;
-    char nome[BUFSZ];
+    char nome[TAMANHO_NOME];
     int hits;
     int coluna;
     int linha;
