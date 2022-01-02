@@ -62,6 +62,8 @@ int turnoAtual = -1;
 struct Lista pokemonsAtacantesServidor[4];
 // Flag para indicar a propagacao de uma mensagem quit
 int encerrando = 0;
+// Mutex para impedir que mais de uma thread acesse as variaveis e se tenha condicoes de corrida
+pthread_mutex_t liberacaoProcessamento;
 
 void tratarParametroIncorreto(char* comandoPrograma) {
     // Imprime o uso correto dos parâmetros do programa e encerra o programa
@@ -152,12 +154,24 @@ void bindServidor(int socketServidor, struct sockaddr_storage* dadosSocket) {
     }
 }
 
+void enviarEReceberMensagemServidor(int socketCliente, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
+    // Libera o mutex
+    pthread_mutex_unlock(&liberacaoProcessamento);
+    enviarEReceberMensagem(socketCliente, dadosServidor, mensagem, 0);
+    // Bloqueia o mutex
+    pthread_mutex_lock(&liberacaoProcessamento);
+}
+
 struct sockaddr_storage receberMensagem(int socketServidor, struct sockaddr_storage dadosSocket, char mensagem[BUFSZ]) {
     // Recebe uma mensagem de um cliente
     memset(mensagem, 0, BUFSZ);
     struct sockaddr_storage dadosSocketCliente;
-    socklen_t len = sizeof(dadosSocketCliente); 
+    socklen_t len = sizeof(dadosSocketCliente);
+    // Libera o mutex
+    pthread_mutex_unlock(&liberacaoProcessamento);
     size_t tamanhoMensagem = recvfrom(socketServidor, (char *)mensagem, BUFSZ, MSG_WAITALL, ( struct sockaddr *) &dadosSocketCliente, &len);
+    // Bloqueia o mutex
+    pthread_mutex_lock(&liberacaoProcessamento);
     mensagem[tamanhoMensagem] = '\0';
     printf("Recebeu mensagem %s", mensagem);
     return dadosSocketCliente;
@@ -396,7 +410,7 @@ int gerarEEnviarRespostaQuit(char mensagem[BUFSZ], int socketServidor, struct so
                     perror("Erro ao definir as configuracoes do socket");
                 }
                 // Envia a mensagem a outros servidores
-                enviarEReceberMensagem(socketTemp, dadosSockets[i], mensagem, 0);
+                enviarEReceberMensagemServidor(socketTemp, dadosSockets[i], mensagem);
                 close(socketTemp);
                 strcpy(mensagem, mensagemOriginal);
             }
@@ -481,6 +495,8 @@ void* esperarPorConexoesCliente(void* param) {
     int socketServidor = parametros.socket;
     struct sockaddr_storage dadosSocket = parametros.dadosSocket;
     int id = parametros.id;
+    // Bloqueia o mutex
+    pthread_mutex_lock(&liberacaoProcessamento);
     // Enquanto o servidor estiver ativo ele deve receber conexões de novos jogos
     printf("Servidor %d esperando conexão\n", id);
     while (1) {
@@ -488,10 +504,11 @@ void* esperarPorConexoesCliente(void* param) {
         int retorno = executarJogo(socketServidor, dadosSocket, id);
         // Caso o servidor deve ser encerrado finaliza o laço de conexões de clientes
         if(retorno == ENCERRAR) { 
-            pthread_exit(NULL);
+            break;
         }
     }
-
+    // Libera o mutex
+    pthread_mutex_unlock(&liberacaoProcessamento);
     pthread_exit(NULL);
 }
 
@@ -500,6 +517,8 @@ int main(int argc, char** argv) {
     verificarParametros(argc, argv);
     // Inicializa a seed para gerar valores aleatorios
     srand(time(NULL));
+    // Inicializa o mutex
+    pthread_mutex_init(&liberacaoProcessamento, NULL);
     // Declara os dados usados para as threads
     struct ParametroThreadServidor parametros[4];
     pthread_t threads[4];
@@ -532,6 +551,9 @@ int main(int argc, char** argv) {
         close(socketServidores[i]);
         limpaLista(&pokemonsAtacantesServidor[i]);
     }
+
+    // Destroi o mutex
+    pthread_mutex_destroy(&liberacaoProcessamento);
 
     exit(EXIT_SUCCESS);
 }
