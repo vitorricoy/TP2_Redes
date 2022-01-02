@@ -8,7 +8,6 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <errno.h>
 #include <arpa/inet.h>
 
 #define TAMANHO_NOME 32
@@ -16,6 +15,7 @@
 #define MAX_TURNOS 50
 #define NUMERO_COLUNAS 4
 
+// Posicao dos pokemons defensores
 struct PosPokemonDefensor {
     int posX;
     int posY;
@@ -62,8 +62,9 @@ void inicializarDadosSocket(const char *enderecoStr, unsigned short porta, struc
     }
 }
 
-int inicializarSocketClienteIPv4() {
-    int socketCliente = socket(AF_INET, SOCK_DGRAM, 0);
+int inicializarSocketCliente(int familia) {
+    // Inicializa o socket do cliente
+    int socketCliente = socket(familia, SOCK_DGRAM, 0);
     if(socketCliente < 0) {
         sairComMensagem("Erro ao criar o socket");
     }
@@ -72,79 +73,33 @@ int inicializarSocketClienteIPv4() {
         perror("Erro ao definir as configuracoes do socket");
     }
     return socketCliente;
+}
+
+int inicializarSocketClienteIPv4() {
+    // Inicializa o socket do cliente com IPv4
+    return inicializarSocketCliente(AF_INET);
 }
 
 int inicializarSocketClienteIPv6() {
-    int socketCliente = socket(AF_INET6, SOCK_DGRAM, 0);
-    if(socketCliente < 0) {
-        sairComMensagem("Erro ao criar o socket");
-    }
-    struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
-    if (setsockopt(socketCliente, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Erro ao definir as configuracoes do socket");
-    }
-    return socketCliente;
+    // Inicializa o socket do cliente com IPv6
+    return inicializarSocketCliente(AF_INET6);
 }
 
-void leMensagemEntrada(char mensagem[BUFSZ]) {
-    // Lê a mensagem digitada e a salva em 'mensagem'
-    memset(mensagem, 0, sizeof(*mensagem));
-    fgets(mensagem, BUFSZ-1, stdin);
-    // Caso a mensagem lida não termine com \n coloca um \n
-    if(mensagem[strlen(mensagem)-1] != '\n') {
-        strcat(mensagem, "\n");
-    }
-}
-
-void enviaERecebeMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
+void enviarEReceberMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
+    // Escolhe o socket a ser usado com base na versao do protocolo IP do servidor
     int socketCliente;
     if(dadosServidor.ss_family == AF_INET) {
         socketCliente = socketClienteIPv4;
     } else {
         socketCliente = socketClienteIPv6;
     }
-    // Envia o parâmetro 'mensagem' para o servidor
-    size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), 0, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
-    if(strlen(mensagem) != tamanhoMensagemEnviada) {
-        sairComMensagem("Erro ao enviar mensagem");
-    }
-    printf("> %s", mensagem);
-    char mensagemResposta[BUFSZ];
-    memset(mensagemResposta, 0, BUFSZ);
-    socklen_t len = sizeof(dadosServidor);
-    size_t tamanhoMensagem = recvfrom(socketCliente, (char *)mensagemResposta, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len);
-    while(tamanhoMensagem == -1) {
-        if(errno != EAGAIN && errno != EWOULDBLOCK) {
-            perror("Erro ao receber mensagem de resposta");
-        }
-        printf("Timeout no recvfrom\n");
-        size_t tamanhoMensagemEnviada = sendto(socketCliente, (const char *)mensagem, strlen(mensagem), 0, (const struct sockaddr *) &dadosServidor, sizeof(dadosServidor));
-        if (strlen(mensagem) != tamanhoMensagemEnviada) {
-            sairComMensagem("Erro ao enviar mensagem");
-        }
-        printf("> %s", mensagem);
-        memset(mensagemResposta, 0, BUFSZ);
-        tamanhoMensagem = recvfrom(socketCliente, (char *)mensagemResposta, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len);
-    } 
-    mensagemResposta[tamanhoMensagem] = '\0';
-    printf("< %s", mensagemResposta);
-    memcpy(mensagem, mensagemResposta, BUFSZ);
+    // Envia a mensagem e recebe a resposta
+    enviarEReceberMensagem(socketCliente, dadosServidor, mensagem, 1);
 }
 
-void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor[4]) {
-    int i, j, k;
-
-    // Inicia o jogo
-    char mensagem[BUFSZ];
-    for(i=0 ; i<4; i++) {
-        strcpy(mensagem, "start\n");
-        enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
-    }
-
-    char lixo[BUFSZ];
-    strcpy(mensagem, "getdefenders\n");
-    int servidorAReceber = rand()%4;
-    enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+int getNumeroDefensores(char mensagem[BUFSZ]) {
+    int i;
+    // Identifica o numero de defensores com base na mensagem de resposta do getdefenders
     int tamMsg = strlen(mensagem);
     int contVirgulas = 0;
     for(i=0; i<tamMsg; i++) {
@@ -152,8 +107,11 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
             contVirgulas++;
         }
     }
-    int numeroDefensores = (contVirgulas+1)/2;
-    struct PosPokemonDefensor defensores[numeroDefensores];
+    return (contVirgulas+1)/2;
+}
+
+void preencherListaPokemonsDefensores(int numeroDefensores, char mensagem[BUFSZ], struct PosPokemonDefensor defensores[]) {
+    int i;
     int offset = 10;
     for(i=0; i<numeroDefensores; i++) {
         int lido;
@@ -163,70 +121,109 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
             offset+=2;
         }
     }
-    for(i=0; i<=MAX_TURNOS; i++) {
-        apagaLista();
+}
 
-        for(j=0; j<4; j++) {
-            sprintf(mensagem, "%s %d\n", "getturn", i);
-            enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[j], mensagem);
-            char* parte;
-            parte = strtok(mensagem, "\n");
-            int idLinha, idColuna;
-            sscanf(parte, "%s %d", lixo, &idLinha);
+void preencherListaPokemonsAtacantes(char mensagem[BUFSZ], struct Lista* listaPokemonsAtacantes) {
+    char lixo[BUFSZ];
+    // Divide a mensagem em linhas
+    char* parte;
+    parte = strtok(mensagem, "\n");
+    int idLinha, idColuna;
+    sscanf(parte, "%s %d", lixo, &idLinha);
+    parte = strtok(NULL, "\n");
+    while(parte != NULL) {
+        parte = strtok(NULL, "\n");
+        sscanf(parte, "%s %d", lixo, &idColuna);
+        parte = strtok(NULL, "\n");
+        while(parte != NULL && strncmp("turn ", parte, 5) != 0) {
+            struct PokemonAtacante* pokemonAtacante = (struct PokemonAtacante*) malloc(sizeof(struct PokemonAtacante));
+            int id, hits;
+            char nome[TAMANHO_NOME];
+            sscanf(parte, "%d %s %d", &id, nome, &hits);
+            pokemonAtacante->coluna = idColuna-1;
+            pokemonAtacante->linha = idLinha-1;
+            pokemonAtacante->hits = hits;
+            pokemonAtacante->id = id;
+            printf("%s: %s\n", parte, nome);
+            strcpy(pokemonAtacante->nome, nome);
+            adicionarElemento(listaPokemonsAtacantes, *pokemonAtacante);
             parte = strtok(NULL, "\n");
-            while(parte != NULL) {
-                parte = strtok(NULL, "\n");
-                sscanf(parte, "%s %d", lixo, &idColuna);
-                parte = strtok(NULL, "\n");
-                while(parte != NULL && strncmp("turn ", parte, 5) != 0) {
-                    struct PokemonAtacante* pokemonAtacante = (struct PokemonAtacante*) malloc(sizeof(struct PokemonAtacante));
-                    int id, hits;
-                    char nome[TAMANHO_NOME];
-                    sscanf(parte, "%d %s %d", &id, nome, &hits);
-                    pokemonAtacante->coluna = idColuna-1;
-                    pokemonAtacante->linha = idLinha-1;
-                    pokemonAtacante->hits = hits;
-                    pokemonAtacante->id = id;
-                    printf("%s: %s\n", parte, nome);
-                    strcpy(pokemonAtacante->nome, nome);
-                    adicionarElemento(*pokemonAtacante);
-                    parte = strtok(NULL, "\n");
-                }
-            }
         }
+    }
+}
 
+void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor[4]) {
+    int i, j, k;
+
+    // Inicia o jogo
+    char mensagem[BUFSZ];
+    for(i=0 ; i<4; i++) {
+        strcpy(mensagem, "start\n");
+        enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
+    }
+    // Busca os pokemons defensores
+    char lixo[BUFSZ];
+    strcpy(mensagem, "getdefenders\n");
+    int servidorAReceber = rand()%4;
+    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    // Converte a mensagem para a lista de pokemons defensores
+    int numeroDefensores = getNumeroDefensores(mensagem);
+    struct PosPokemonDefensor defensores[numeroDefensores];
+    preencherListaPokemonsDefensores(numeroDefensores, mensagem, defensores);
+    // Loop para executar os turnos
+    for(i=0; i<=MAX_TURNOS; i++) {
+        // Inicializa uma lista encadeada para os pokemons atacantes
+        struct Lista listaPokemonsAtacantes;
+        inicializarLista(&listaPokemonsAtacantes);
+        // Para cada servidor
+        for(j=0; j<4; j++) {
+            // Envia a mensagem de getturn
+            sprintf(mensagem, "%s %d\n", "getturn", i);
+            enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[j], mensagem);
+            // Adiciona os pokemons atacantes recebidos na lista
+            preencherListaPokemonsAtacantes(mensagem, &listaPokemonsAtacantes);
+        }
+        // Para cada defensor
         for(j=0; j<numeroDefensores; j++) {
-            for(k=0; k<getTamanho(); k++) {
+            // E para cada pokemon atacante
+            for(k=0; k<listaPokemonsAtacantes.tamanho; k++) {
                 struct PosPokemonDefensor defensor = defensores[j];
-                struct PokemonAtacante atacante = *buscarElementoPos(k);
+                struct PokemonAtacante atacante = *buscarElementoPos(&listaPokemonsAtacantes, k);
+                // Verifica se o pokemon defensor pode atacar esse pokemon atacante
                 if(getHitsPokemon(atacante.nome) > atacante.hits && defensor.posX == atacante.coluna && (defensor.posY == atacante.linha || defensor.posY-1 == atacante.linha)) {
-                    // Gera mensagem de ataque
+                    // Caso o ataque possa ser feito, gera a mensagem de ataque
                     char mensagemAtaque[BUFSZ];
                     sprintf(mensagemAtaque, "shot %d %d %d\n", defensor.posX+1, defensor.posY+1, atacante.id);
-                    printf("Atirando de (%d, %d) em (%d, %d)\n", defensor.posX, defensor.posY, atacante.coluna, atacante.linha);
-                    printf("shot %d %d %d\n", defensor.posX+1, defensor.posY+1, atacante.id);
-                    enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante.linha], mensagemAtaque);
+                    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante.linha], mensagemAtaque);
+                    // Verifica se o ataque foi um sucesso
+                    // Pelo algoritmo usado pelo cliente, os ataques devem sempre ser um sucesso
                     int posX, posY, id, status;
                     sscanf(mensagemAtaque, "%s %d %d %d %d", lixo, &posX, &posY, &id, &status);
                     if(status != 0) {
                         sairComMensagem("Erro ao atirar em pokemons atacantes");
                     }
+                    // Se o ataque deu certo, atualiza a vida do pokemon atacado
                     atacante.hits++;
-                    atualizarElemento(atacante);
+                    // Atualiza o pokemon atacado na lista
+                    atualizarElemento(&listaPokemonsAtacantes, atacante);
                     break;
                 }
             }
         }
+        // Limpa a lista de pokemons atacantes
+        limpaLista(&listaPokemonsAtacantes);
     }
-    apagaLista();
+    // Envia um getturn apos o fim do jogo para receber a mensagem de gameover
     sprintf(mensagem, "%s %d\n", "getturn", MAX_TURNOS+1);
     servidorAReceber = rand()%4;
-    enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    // Envvia um quit para encerrar os servidores
     strcpy(mensagem, "quit\n");
-    enviaERecebeMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
 }
 
 int main(int argc, char **argv) {
+    // Verifica os parametros recebidos
     verificarParametros(argc, argv);
     struct sockaddr_storage dadosServidor[4];
     int i;
@@ -234,15 +231,19 @@ int main(int argc, char **argv) {
         tratarParametroIncorreto(argv[0]);
     }
     // Converte o parâmetro da porta para unsigned short
-    unsigned short porta = (unsigned short) atoi(argv[2]); // unsigned short
+    unsigned short porta = (unsigned short) atoi(argv[2]);
 
+    // Inicializa os dados dos sockets dos servidores
     for(i=0; i<4; i++) {
         inicializarDadosSocket(argv[1], porta+i, &dadosServidor[i], argv[0]);
     }
 
+    // Incializa os sockets do cliente
     int socketClienteIPv4 = inicializarSocketClienteIPv4();
     int socketClienteIPv6 = inicializarSocketClienteIPv6();
+    // Realiza a comunicacao do cliente com os servidores
     comunicarComServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor);
+    // Encerra os sockets
     close(socketClienteIPv4);
     close(socketClienteIPv6);
 	exit(EXIT_SUCCESS);

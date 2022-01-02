@@ -16,45 +16,53 @@ struct No {
     struct No* ant;
 };
 
-struct No sentinela;
-int tamanho = 0;
+struct Lista {
+    struct No sentinela;
+    int tamanho;
+};
 
-void adicionarElemento(struct PokemonAtacante elemento) {
+void inicializarLista(struct Lista* lista) {
+    lista->tamanho = 0;
+    lista->sentinela.prox = NULL;
+    lista->sentinela.ant = NULL;
+}
+
+void adicionarElemento(struct Lista* lista, struct PokemonAtacante elemento) {
     struct No* novoNo = (struct No*) malloc(sizeof(struct No));
     novoNo->valor = elemento;
     novoNo->prox = NULL;
     novoNo->ant = NULL;
-    if(sentinela.ant == NULL) {
-        sentinela.prox = novoNo;
-        sentinela.ant = novoNo;
-        novoNo->ant = &sentinela;
-        novoNo->prox = &sentinela;
+    if(lista->sentinela.ant == NULL) {
+        lista->sentinela.prox = novoNo;
+        lista->sentinela.ant = novoNo;
+        novoNo->ant = &lista->sentinela;
+        novoNo->prox = &lista->sentinela;
     } else {
-        sentinela.ant->prox = novoNo;
-        novoNo->ant = sentinela.ant;
-        novoNo->prox = &sentinela;
-        sentinela.ant = novoNo;
+        lista->sentinela.ant->prox = novoNo;
+        novoNo->ant = lista->sentinela.ant;
+        novoNo->prox = &lista->sentinela;
+        lista->sentinela.ant = novoNo;
     }
-    tamanho++;
+    lista->tamanho++;
 }
 
-void removerElemento(struct PokemonAtacante removido) {
-    struct No* proximo = sentinela.prox;
+void removerElemento(struct Lista* lista, struct PokemonAtacante removido) {
+    struct No* proximo = lista->sentinela.prox;
     while(proximo != NULL) {
         if(proximo->valor.id == removido.id) {
             // Remove e sai
             proximo->ant->prox = proximo->prox;
             proximo->prox->ant = proximo->ant;
             free(proximo);
-            tamanho--;
+            lista->tamanho--;
             return;
         }
         proximo = proximo->prox;
     }
 }
 
-struct PokemonAtacante* buscarElementoId(int id) {
-    struct No* proximo = sentinela.prox;
+struct PokemonAtacante* buscarElementoId(struct Lista* lista, int id) {
+    struct No* proximo = lista->sentinela.prox;
     while(proximo != NULL) {
         if(proximo->valor.id == id) {
             return &proximo->valor;
@@ -64,8 +72,8 @@ struct PokemonAtacante* buscarElementoId(int id) {
     return NULL;
 }
 
-struct PokemonAtacante* buscarElementoPos(int pos) {
-    struct No* proximo = sentinela.prox;
+struct PokemonAtacante* buscarElementoPos(struct Lista* lista, int pos) {
+    struct No* proximo = lista->sentinela.prox;
     int i;
     for(i=0; i<pos-1; i++) {
         if(proximo == NULL) {
@@ -76,8 +84,8 @@ struct PokemonAtacante* buscarElementoPos(int pos) {
     return &proximo->valor;
 }
 
-void atualizarElemento(struct PokemonAtacante novoValor) {
-    struct No* proximo = sentinela.prox;
+void atualizarElemento(struct Lista* lista, struct PokemonAtacante novoValor) {
+    struct No* proximo = lista->sentinela.prox;
     while(proximo != NULL) {
         if(proximo->valor.id == novoValor.id) {
             // Atualiza e sai
@@ -88,38 +96,34 @@ void atualizarElemento(struct PokemonAtacante novoValor) {
     }
 }
 
-int getTamanho() {
-    return tamanho;
-}
-
-void avancarTurno() {
+void avancarTurno(struct Lista* lista) {
     int i;
-    struct No* noAtual = sentinela.prox;
-    for(i = 0; i<tamanho; i++) {
+    struct No* noAtual = lista->sentinela.prox;
+    for(i = 0; i<lista->tamanho; i++) {
         noAtual->valor.coluna++;
         noAtual = noAtual->prox;
     }
 }
 
-struct PokemonAtacante* getLista() {
+struct PokemonAtacante* getLista(struct Lista* lista) {
     int i;
-    struct PokemonAtacante* ret = (struct PokemonAtacante*) malloc(sizeof(struct PokemonAtacante)*tamanho);
-    struct No* noAtual = sentinela.prox;
-    for(i = 0; i<tamanho; i++) {
+    struct PokemonAtacante* ret = (struct PokemonAtacante*) malloc(sizeof(struct PokemonAtacante)*lista->tamanho);
+    struct No* noAtual = lista->sentinela.prox;
+    for(i = 0; i<lista->tamanho; i++) {
         ret[i] = noAtual->valor;
         noAtual = noAtual->prox;
     }
     return ret;
 }
 
-void apagaLista() {
+void limpaLista(struct Lista* lista) {
     int i;
-    struct No* noAtual = sentinela.prox;
+    struct No* noAtual = lista->sentinela.prox;
     if(noAtual == NULL) {
         return;
     }
     struct No* proximo = noAtual->prox;
-    for(i = 0; i<tamanho; i++) {
+    for(i = 0; i<lista->tamanho; i++) {
         free(noAtual);
         noAtual = proximo;
         if(noAtual == NULL) {
@@ -127,7 +131,7 @@ void apagaLista() {
         }
         proximo = noAtual->prox;
     }
-    sentinela.prox = NULL;
-    sentinela.ant = NULL;
-    tamanho = 0;
+    lista->sentinela.prox = NULL;
+    lista->sentinela.ant = NULL;
+    lista->tamanho = 0;
 }

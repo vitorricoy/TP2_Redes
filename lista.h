@@ -10,20 +10,31 @@ struct PokemonAtacante {
     int linha;
 };
 
-void adicionarElemento(struct PokemonAtacante elemento);
+struct No {
+    struct PokemonAtacante valor;
+    struct No* prox;
+    struct No* ant;
+};
 
-void removerElemento(struct PokemonAtacante removido);
+struct Lista {
+    struct No sentinela;
+    int tamanho;
+};
 
-void atualizarElemento(struct PokemonAtacante novoValor);
+void inicializarLista(struct Lista* lista);
 
-struct PokemonAtacante* buscarElementoId(int id);
+void adicionarElemento(struct Lista* lista, struct PokemonAtacante elemento);
 
-struct PokemonAtacante* buscarElementoPos(int pos);
+void removerElemento(struct Lista* lista, struct PokemonAtacante removido);
 
-int getTamanho();
+struct PokemonAtacante* buscarElementoId(struct Lista* lista, int id);
 
-struct PokemonAtacante* getLista();
+struct PokemonAtacante* buscarElementoPos(struct Lista* lista, int pos);
 
-void apagaLista();
+void atualizarElemento(struct Lista* lista, struct PokemonAtacante novoValor);
 
-void avancarTurno();
+void avancarTurno(struct Lista* lista);
+
+struct PokemonAtacante* getLista(struct Lista* lista);
+
+void limpaLista(struct Lista* lista);
