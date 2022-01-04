@@ -5,7 +5,15 @@
 #include <arpa/inet.h>
 
 #define TAMANHO_NOME 32
-#define BUFSZ 512
+#define BUFSZ 1024
+#define MAX_TURNOS 50
+#define NUMERO_COLUNAS 4
+
+// Posicao do pokemon defensor
+struct PosPokemonDefensor {
+    int posX;
+    int posY;
+};
 
 // Encerra o programa com a mensagem 'msg'
 void sairComMensagem(char *msg);

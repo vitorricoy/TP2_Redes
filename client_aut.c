@@ -10,6 +10,12 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
+// Posicao dos pokemons defensores
+struct PosPokemonDefensor {
+    int posX;
+    int posY;
+};
+
 void tratarParametroIncorreto(char* comandoPrograma) {
     // Imprime o uso correto dos parâmetros do programa e encerra o programa
     printf("Uso: %s <ip do servidor> <porta do servidor>\n", comandoPrograma);

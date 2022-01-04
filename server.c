@@ -18,23 +18,13 @@
 #define PROXIMO_JOGO 2
 #define ENCERRAR 3
 
-#define BUFSZ 512
-#define TAMANHO_NOME 32
-#define MAX_TURNOS 50
 #define NUMERO_DEFENSORES 20
-#define NUMERO_COLUNAS 4
 
 // Parametros de uma thread do servidor
 struct ParametroThreadServidor {
     int socket;
     struct sockaddr_storage dadosSocket;
     int id;
-};
-
-// Posicao do pokemon defensor
-struct PosPokemonDefensor {
-    int posX;
-    int posY;
 };
 
 // Lista das posicoes dos pokemons defensores
@@ -46,7 +36,7 @@ int proximoIdAtacante = 1;
 int pokemonsDestruidos = 0;
 // Numero de pokemons atacantes que chegaram na pokedex
 int chegaramNaPokedex = 0;
-// Flags para indicar se o pokemon defensor ja atirou nesse turno
+// Flags para indicar se o pokemon defensor ja atirou nesse turno e, se sim, em quem ele atirou
 int jaAtirou[NUMERO_DEFENSORES];
 // Dados dos sockets de cada servidor
 struct sockaddr_storage dadosSockets[4];
@@ -285,9 +275,14 @@ int gerarEEnviarRespostaGetTurn(char mensagem[BUFSZ], int socketServidor, struct
     // Gera a mensagem de resposta no formato pedido
     char resposta[BUFSZ];
     sprintf(resposta, "base %d\n", id+1);
-    if(turnoAtual > MAX_TURNOS) {
+    if(idTurno > MAX_TURNOS) {
         // Caso o turno pedido seja um turno depois do fim do jogo, gera uma mensagem de gameover
         gerarEEnviarResultadoGameOver(resposta, 0, socketServidor, dadosSocketCliente);
+        return PROXIMA_MENSAGEM;
+    }
+    if(idTurno < turnoAtual) {
+        // Caso o turno pedido seja um turno passado, gera uma mensagem de gameover com erro
+        gerarEEnviarResultadoGameOver(resposta, 1, socketServidor, dadosSocketCliente);
         return PROXIMA_MENSAGEM;
     }
     // Avanca o turno do servidor para o turno pedido pelo cliente
@@ -297,7 +292,7 @@ int gerarEEnviarRespostaGetTurn(char mensagem[BUFSZ], int socketServidor, struct
             avancarTurno(&pokemonsAtacantesServidor[i]);
         }
         // Reinicia as flags de tiro dos defensores
-        memset(jaAtirou, 0, sizeof(jaAtirou));
+        memset(jaAtirou, -1, sizeof(jaAtirou));
         turnoAtual++;
     }
     // Gera um pokemon atacante
@@ -363,9 +358,9 @@ int gerarEEnviarRespostaShot(char mensagem[BUFSZ], int socketServidor, struct so
             sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 1);
         } else {
             // Verifica se o defensor consegue acertar o atacado e se ele ja nao atirou nesse turno
-            if(!jaAtirou[indDefensor] && posPokemonDefensor->posX == pokemonAtacado->coluna && (posPokemonDefensor->posY == pokemonAtacado->linha || posPokemonDefensor->posY-1 == pokemonAtacado->linha)) {
+            if(jaAtirou[indDefensor]==-1 && posPokemonDefensor->posX == pokemonAtacado->coluna && (posPokemonDefensor->posY == pokemonAtacado->linha || posPokemonDefensor->posY-1 == pokemonAtacado->linha)) {
                 // Indica que agora o defensor ja atirou nesse turno
-                jaAtirou[indDefensor] = 1; 
+                jaAtirou[indDefensor] = idAtacante; 
                 // Indica que o pokemon atacado recebeu um ataque
                 pokemonAtacado->hits++;
                 // Se o pokemon foi destruido
@@ -381,8 +376,14 @@ int gerarEEnviarRespostaShot(char mensagem[BUFSZ], int socketServidor, struct so
                 // Envia a mensagem shotresp indicando sucesso
                 sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 0);
             } else {
-                // Envia a mensagem shotresp indicando erro
-                sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 1);
+                if(jaAtirou[indDefensor] == idAtacante) {
+                    // Se o defensor ja atirou nesse atacante, trata-se de uma retranmissão
+                    // Logo, envia a mensagem shotresp indicando sucesso
+                    sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 0);
+                } else {
+                    // Senão, envia a mensagem shotresp indicando erro
+                    sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 1);
+                }
             }
         }
     }
