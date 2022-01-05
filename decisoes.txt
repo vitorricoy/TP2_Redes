@@ -1,3 +1,25 @@
+Toda mensagem enviada possui uma resposta, assim vemos o timeout apenas do recv, já que ele é suficiente para indicar perda.
+
 Se avançar dois turnos, o servidor avança sem ataques, ou seja, os pokemons adversarios andam e os defensores fazem nada. Por exemplo ao executar getturn 0 e getturn 2, o turno 1 passa sem ações dos defensores
 
 Quando recebe ações que sincronizam tudo e tem varias respostas (getturn), o cliente recebe 4 mensagens do mesmo servidor com as respostas de cada um deles.
+
+!Atacantes e defensores gerados aleatoriamente
+
+Fiz o quit retornar uma mensagem "exited" para possibilitar a retransmissão
+
+!Se o cliente receber pelo teclado uma mensagem de shot com um id de pokemon atacante invalido, o cliente imprime um erro sem enviar nada ao servidor, já que não é possível decidir o servidor que receberá a mensagem.
+
+!Foi considerado apenas o comando para definir se uma mensagem é valida (shot, getturn, start, ...)
+
+!Não serão comandos start no meio de um jogo reiniciam o jogo.
+
+!Quando ocorre um gameover com erro o jogo é reiniciado.
+
+!Dois momentos que tem comunicacao por socket entre servidores: quit e gameover com erro
+
+!Mensagens com consequencias nao revertiveis como um comando incorreto ou um getturn errado, ao serem retransmitidas, levam ao mesmo efeito
+(geração da mensagem de gameover com erro) mas as estatisticas se perdem caso se perca o pacote da resposta do primeiro gameover
+
+!Para o quit especificamente foi criada uma regra que tenta a retransmissao apenas 5 vezes, caso falhe as 5 considera que o servidor
+nao esta respondendo por ter sido encerrado.

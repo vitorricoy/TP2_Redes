@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <time.h>
+#include <sys/time.h>
 
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -18,7 +19,7 @@
 #define PROXIMO_JOGO 2
 #define ENCERRAR 3
 
-#define NUMERO_DEFENSORES 20
+#define NUMERO_DEFENSORES 6
 
 // Parametros de uma thread do servidor
 struct ParametroThreadServidor {
@@ -45,7 +46,7 @@ int socketServidores[4];
 // Flag para indicar se o ambiente foi resetado
 int ambienteResetado = 1;
 // Contabiliza o momento de inicio da execucao dos servidores
-time_t inicio = 0;
+struct timeval inicio;
 // Identifica o turno atual
 int turnoAtual = -1;
 // Listas dos pokemons atacantes controlados por cada servidor
@@ -217,12 +218,32 @@ struct PokemonAtacante* gerarPokemonAtacante(int coluna, int linha) {
     return pokemon;
 }
 
-void gerarEEnviarResultadoGameOver(char resposta[BUFSZ], int sucesso, int socketServidor, struct sockaddr_storage dadosSocketCliente) {
+void gerarEEnviarResultadoGameOver(char resposta[BUFSZ], int erro, int socketServidor, struct sockaddr_storage dadosSocketCliente, int idServidor) {
     // Indica um gameover, de acordo com os parametros recebidos
-    clock_t fim = clock();
-    double tempoGasto = (double)(fim-inicio)/CLOCKS_PER_SEC;
-    tempoGasto = ceil(tempoGasto);
-    sprintf(resposta, "gameover %d %d %d %d\n", sucesso, pokemonsDestruidos, chegaramNaPokedex, (int)tempoGasto);
+    int i;
+    struct timeval fim;
+    gettimeofday(&fim, NULL);
+    int tempoGasto = (fim.tv_sec-inicio.tv_sec);
+    sprintf(resposta, "gameover %d %d %d %d\n", erro, pokemonsDestruidos, chegaramNaPokedex, tempoGasto);
+    if(erro) {
+        for(i=0; i<4; i++) {
+            if(i != idServidor) {
+                // Envia uma mensagem ao outro servidor indicando o comando restart definido por mim
+                int socketTemp = socket(AF_INET6, SOCK_DGRAM, 0);
+                // Configura um timeout de um segundo para o socket
+                struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
+                if (setsockopt(socketTemp, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+                    perror("Erro ao definir as configuracoes do socket");
+                }
+                // Preenche a mensagem
+                char mensagemTemp[BUFSZ];
+                strcpy(mensagemTemp, "restart\n");
+                // Envia a mensagem a outros servidores
+                enviarEReceberMensagemServidor(socketTemp, dadosSockets[i], mensagemTemp);
+                close(socketTemp);
+            }
+        }
+    }
     enviarMensagem(resposta, socketServidor, dadosSocketCliente);
 }
 
@@ -231,19 +252,19 @@ void gerarEEnviarRespostaStart(int socketServidor, struct sockaddr_storage dados
     char resposta[BUFSZ];
     ambienteResetado = 0;
     strcpy(resposta, "game started: path ");
-    if(inicio == 0) {
-        inicio = clock();
+    if(inicio.tv_sec == 0 && inicio.tv_usec == 0) {
+        gettimeofday(&inicio, NULL);
     }
     char idThread[16];
     sprintf(idThread, "%d\n", id+1);
     strcat(resposta, idThread);
+    // Gera os pokemons defensores
+    gerarPokemonsDefensores();
     enviarMensagem(resposta, socketServidor, dadosSocketCliente);
 }
 
 int gerarEEnviarRespostaGetDefenders(char mensagem[BUFSZ], int socketServidor, struct sockaddr_storage dadosSocketCliente, int id) {
     int i;
-    // Gera os pokemons defensores
-    gerarPokemonsDefensores();
     // Gera a mensagem de resposta com a lista de pokemons defensores no formato pedido
     char resposta[BUFSZ];
     strcpy(resposta, "defender [");
@@ -277,28 +298,55 @@ int gerarEEnviarRespostaGetTurn(char mensagem[BUFSZ], int socketServidor, struct
     sprintf(resposta, "base %d\n", id+1);
     if(idTurno > MAX_TURNOS) {
         // Caso o turno pedido seja um turno depois do fim do jogo, gera uma mensagem de gameover
-        gerarEEnviarResultadoGameOver(resposta, 0, socketServidor, dadosSocketCliente);
+        gerarEEnviarResultadoGameOver(resposta, 0, socketServidor, dadosSocketCliente, id);
         return PROXIMA_MENSAGEM;
     }
     if(idTurno < turnoAtual) {
         // Caso o turno pedido seja um turno passado, gera uma mensagem de gameover com erro
-        gerarEEnviarResultadoGameOver(resposta, 1, socketServidor, dadosSocketCliente);
-        return PROXIMA_MENSAGEM;
+        gerarEEnviarResultadoGameOver(resposta, 1, socketServidor, dadosSocketCliente, id);
+        return PROXIMO_JOGO;
     }
     // Avanca o turno do servidor para o turno pedido pelo cliente
     while(turnoAtual < idTurno) {
+        // Remove os pokemons destruidos e que chegaram na pokedex
         for(i=0; i<4; i++) {
-            // Avanca os pokemons atacantes
-            avancarTurno(&pokemonsAtacantesServidor[i]);
+            struct PokemonAtacante* lista = getLista(&pokemonsAtacantesServidor[i]);
+            int tamanho = pokemonsAtacantesServidor[i].tamanho;
+            for(j=0; j<tamanho; j++) {
+                // Se o pokemon foi destruido
+                if(lista[j].hits >= getHitsPokemon(lista[j].nome)) {
+                    // Atualiza o contador
+                    pokemonsDestruidos++;
+                    // Remove o pokemon
+                    removerElemento(&pokemonsAtacantesServidor[i], lista[j]);
+                }
+                // Se o pokemon chegou na pokedex
+                if(lista[j].coluna >= NUMERO_COLUNAS) {
+                    // Atualiza o contador
+                    chegaramNaPokedex++;
+                    // Remove o pokemon
+                    removerElemento(&pokemonsAtacantesServidor[i], lista[j]);
+                }
+            }
+        }
+        for(i=0; i<4; i++) {
+            // Avanca os pokemons atacantes para a proxima coluna
+            struct PokemonAtacante* listaPokemons = getLista(&pokemonsAtacantesServidor[i]);
+            for(j=0; j<pokemonsAtacantesServidor[i].tamanho; j++) {
+                listaPokemons[j].coluna++;
+                atualizarElemento(&pokemonsAtacantesServidor[i], listaPokemons[j]);
+            }
+        }
+        for(i=0; i<4; i++) {
+            // Gera um pokemon atacante
+            struct PokemonAtacante* pokemonGerado = gerarPokemonAtacante(0, i);
+            if(pokemonGerado != NULL) {
+                adicionarElemento(&pokemonsAtacantesServidor[i], *pokemonGerado);
+            }
         }
         // Reinicia as flags de tiro dos defensores
         memset(jaAtirou, -1, sizeof(jaAtirou));
         turnoAtual++;
-    }
-    // Gera um pokemon atacante
-    struct PokemonAtacante* pokemonGerado = gerarPokemonAtacante(0, id);
-    if(pokemonGerado != NULL) {
-        adicionarElemento(&pokemonsAtacantesServidor[id], *pokemonGerado);
     }
     // Busca a lista como um vetor
     struct PokemonAtacante* listaAtacantes = getLista(&pokemonsAtacantesServidor[id]);
@@ -318,15 +366,6 @@ int gerarEEnviarRespostaGetTurn(char mensagem[BUFSZ], int socketServidor, struct
         }
         strcat(resposta, temp);
         strcat(resposta, "\n");
-    }
-    // Verifica quais pokemons chegaram na pokedex
-    for(j=0; j<pokemonsAtacantesServidor[id].tamanho; j++) {
-        if(listaAtacantes[j].coluna == NUMERO_COLUNAS) {
-            // Atualiza o contador
-            chegaramNaPokedex++;
-            // Remove o pokemon
-            removerElemento(&pokemonsAtacantesServidor[id], listaAtacantes[j]);
-        }
     }
     enviarMensagem(resposta, socketServidor, dadosSocketCliente);
     return PROXIMA_MENSAGEM;
@@ -358,21 +397,15 @@ int gerarEEnviarRespostaShot(char mensagem[BUFSZ], int socketServidor, struct so
             sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 1);
         } else {
             // Verifica se o defensor consegue acertar o atacado e se ele ja nao atirou nesse turno
-            if(jaAtirou[indDefensor]==-1 && posPokemonDefensor->posX == pokemonAtacado->coluna && (posPokemonDefensor->posY == pokemonAtacado->linha || posPokemonDefensor->posY-1 == pokemonAtacado->linha)) {
+            if(jaAtirou[indDefensor]==-1 && pokemonAtacado->hits < getHitsPokemon(pokemonAtacado->nome) && 
+                posPokemonDefensor->posX == pokemonAtacado->coluna && (posPokemonDefensor->posY == pokemonAtacado->linha || posPokemonDefensor->posY-1 == pokemonAtacado->linha)) {
+                
                 // Indica que agora o defensor ja atirou nesse turno
                 jaAtirou[indDefensor] = idAtacante; 
                 // Indica que o pokemon atacado recebeu um ataque
                 pokemonAtacado->hits++;
-                // Se o pokemon foi destruido
-                if(pokemonAtacado->hits == getHitsPokemon(pokemonAtacado->nome)) {
-                    // Atualiza o contador
-                    pokemonsDestruidos++;
-                    // Remove o pokemon da lista
-                    removerElemento(&pokemonsAtacantesServidor[id], *pokemonAtacado);
-                } else {
-                    // Atualiza o pokemon na lista para indicar sua perda de vida
-                    atualizarElemento(&pokemonsAtacantesServidor[id], *pokemonAtacado);
-                }
+                // Atualiza o pokemon na lista para indicar sua perda de vida
+                atualizarElemento(&pokemonsAtacantesServidor[id], *pokemonAtacado);
                 // Envia a mensagem shotresp indicando sucesso
                 sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 0);
             } else {
@@ -381,7 +414,7 @@ int gerarEEnviarRespostaShot(char mensagem[BUFSZ], int socketServidor, struct so
                     // Logo, envia a mensagem shotresp indicando sucesso
                     sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 0);
                 } else {
-                    // Senão, envia a mensagem shotresp indicando erro
+                    // Senao, envia a mensagem shotresp indicando erro
                     sprintf(resposta, "%s %d %d %d %d\n", "shotresp", posX+1, posY+1, idAtacante, 1);
                 }
             }
@@ -418,8 +451,9 @@ int gerarEEnviarRespostaQuit(char mensagem[BUFSZ], int socketServidor, struct so
         }
     }
     char resposta[BUFSZ];
-    // Envia o resultado de gameover com flag 0
-    gerarEEnviarResultadoGameOver(resposta, 0, socketServidor, dadosSocketCliente);
+    // Envia a confirmacao do encerramento
+    strcpy(resposta, "exited\n");
+    enviarMensagem(resposta, socketServidor, dadosSocketCliente);
     return ENCERRAR;
 }
 
@@ -443,9 +477,17 @@ int tratarPassoDoJogo(char mensagem[BUFSZ], int socketServidor, struct sockaddr_
     if(strcmp(mensagem, "quit\n") == 0) {
         return gerarEEnviarRespostaQuit(mensagem, socketServidor, dadosSocketCliente, id);
     }
+
+    // Verifica se a mensagem e de restart
+    if(strcmp(mensagem, "restart\n") == 0) {
+        char resposta[BUFSZ];
+        strcpy(resposta, "restarted\n");
+        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+        return PROXIMO_JOGO;
+    }
     // Mensagem recebida e invalida, portanto gera um gameover com erro
     char resposta[BUFSZ];
-    gerarEEnviarResultadoGameOver(resposta, 1, socketServidor, dadosSocketCliente);
+    gerarEEnviarResultadoGameOver(resposta, 1, socketServidor, dadosSocketCliente, id);
     // Identifica que o servidor deve receber o próximo recv do cliente
     return PROXIMO_JOGO;
 }
@@ -459,7 +501,8 @@ int executarJogo(int socketServidor, struct sockaddr_storage dadosSocket, int id
         proximoIdAtacante = 1;
         pokemonsDestruidos = 0;
         chegaramNaPokedex = 0;
-        inicio = 0;
+        inicio.tv_sec = 0;
+        inicio.tv_usec = 0;
         encerrando = 0;
         for(i=0; i<4; i++) {
             limpaLista(&pokemonsAtacantesServidor[id]);
@@ -473,20 +516,30 @@ int executarJogo(int socketServidor, struct sockaddr_storage dadosSocket, int id
     if(strcmp(mensagem, "start\n") == 0) {
         gerarEEnviarRespostaStart(socketServidor, dadosSocketCliente, id);
     } else {
-        printf("Esperava start mas recebeu outro comando\n");
         char resposta[BUFSZ];
-        gerarEEnviarResultadoGameOver(resposta, 1, socketServidor, dadosSocketCliente);
+        gerarEEnviarResultadoGameOver(resposta, 1, socketServidor, dadosSocketCliente, id);
         return PROXIMO_JOGO;
+    }
+    dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
+    // Se houve retransmissao do start
+    while(strcmp(mensagem, "start\n") == 0) {
+        char resposta[BUFSZ];
+        strcpy(resposta, "game started: path ");
+        char idThread[16];
+        sprintf(idThread, "%d\n", id+1);
+        strcat(resposta, idThread);
+        enviarMensagem(resposta, socketServidor, dadosSocketCliente);
+        dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
     }
     // Loop para receber e tratar as mensagens dos clientes
     while(1) {
-        struct sockaddr_storage dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
         int retorno = tratarPassoDoJogo(mensagem, socketServidor, dadosSocketCliente, id);
         
         // Se o servidor deve encerrar ou reiniciar o jogo
         if(retorno == ENCERRAR || retorno == PROXIMO_JOGO) {
             return retorno;
         }
+        dadosSocketCliente = receberMensagem(socketServidor, dadosSocket, mensagem);
     }
 }
 

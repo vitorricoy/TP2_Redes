@@ -48,7 +48,7 @@ void adicionarElemento(struct Lista* lista, struct PokemonAtacante elemento) {
 
 void removerElemento(struct Lista* lista, struct PokemonAtacante removido) {
     struct No* proximo = lista->sentinela.prox;
-    while(proximo != NULL) {
+    while(proximo != &lista->sentinela) {
         if(proximo->valor.id == removido.id) {
             // Remove e sai
             proximo->ant->prox = proximo->prox;
@@ -63,7 +63,7 @@ void removerElemento(struct Lista* lista, struct PokemonAtacante removido) {
 
 struct PokemonAtacante* buscarElementoId(struct Lista* lista, int id) {
     struct No* proximo = lista->sentinela.prox;
-    while(proximo != NULL) {
+    while(proximo != &lista->sentinela) {
         if(proximo->valor.id == id) {
             return &proximo->valor;
         }
@@ -93,15 +93,6 @@ void atualizarElemento(struct Lista* lista, struct PokemonAtacante novoValor) {
             return;
         }
         proximo = proximo->prox;
-    }
-}
-
-void avancarTurno(struct Lista* lista) {
-    int i;
-    struct No* noAtual = lista->sentinela.prox;
-    for(i = 0; i<lista->tamanho; i++) {
-        noAtual->valor.coluna++;
-        noAtual = noAtual->prox;
     }
 }
 

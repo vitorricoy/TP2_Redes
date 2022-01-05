@@ -33,8 +33,6 @@ struct PokemonAtacante* buscarElementoPos(struct Lista* lista, int pos);
 
 void atualizarElemento(struct Lista* lista, struct PokemonAtacante novoValor);
 
-void avancarTurno(struct Lista* lista);
-
 struct PokemonAtacante* getLista(struct Lista* lista);
 
 void limpaLista(struct Lista* lista);

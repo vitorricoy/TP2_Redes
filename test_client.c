@@ -10,12 +10,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-// Posicao dos pokemons defensores
-struct PosPokemonDefensor {
-    int posX;
-    int posY;
-};
-
 void tratarParametroIncorreto(char* comandoPrograma) {
     // Imprime o uso correto dos parâmetros do programa e encerra o programa
     printf("Uso: %s <ip do servidor> <porta do servidor>\n", comandoPrograma);
@@ -80,6 +74,18 @@ int inicializarSocketClienteIPv6() {
     return inicializarSocketCliente(AF_INET6);
 }
 
+void enviarEReceberMensagemServidorTurn(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
+    // Escolhe o socket a ser usado com base na versao do protocolo IP do servidor
+    int socketCliente;
+    if(dadosServidor.ss_family == AF_INET) {
+        socketCliente = socketClienteIPv4;
+    } else {
+        socketCliente = socketClienteIPv6;
+    }
+    // Envia a mensagem e recebe a resposta
+    enviarEReceberMensagem(socketCliente, dadosServidor, mensagem, 1);
+}
+
 void enviarEReceberMensagemServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor, char mensagem[BUFSZ]) {
     // Escolhe o socket a ser usado com base na versao do protocolo IP do servidor
     int socketCliente;
@@ -88,6 +94,8 @@ void enviarEReceberMensagemServidor(int socketClienteIPv4, int socketClienteIPv6
     } else {
         socketCliente = socketClienteIPv6;
     }
+    // Imprime a mensagem enviada
+    printf("> %s", mensagem);
     // Envia a mensagem e recebe a resposta
     enviarEReceberMensagem(socketCliente, dadosServidor, mensagem, 1);
 }
@@ -139,7 +147,6 @@ void preencherListaPokemonsAtacantes(char mensagem[BUFSZ], struct Lista* listaPo
             pokemonAtacante->linha = idLinha-1;
             pokemonAtacante->hits = hits;
             pokemonAtacante->id = id;
-            printf("%s: %s\n", parte, nome);
             strcpy(pokemonAtacante->nome, nome);
             adicionarElemento(listaPokemonsAtacantes, *pokemonAtacante);
             parte = strtok(NULL, "\n");
@@ -170,11 +177,13 @@ void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct s
         // Inicializa uma lista encadeada para os pokemons atacantes
         struct Lista listaPokemonsAtacantes;
         inicializarLista(&listaPokemonsAtacantes);
+        // Imprime o getturn assim como o cliente por teclado imprimiria
+        printf("> getturn %d\n", i);
         // Para cada servidor
         for(j=0; j<4; j++) {
             // Envia a mensagem de getturn
             sprintf(mensagem, "%s %d\n", "getturn", i);
-            enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[j], mensagem);
+            enviarEReceberMensagemServidorTurn(socketClienteIPv4, socketClienteIPv6, dadosServidor[j], mensagem);
             // Adiciona os pokemons atacantes recebidos na lista
             preencherListaPokemonsAtacantes(mensagem, &listaPokemonsAtacantes);
         }

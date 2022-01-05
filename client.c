@@ -12,7 +12,7 @@
 
 void tratarParametroIncorreto(char* comandoPrograma) {
     // Imprime o uso correto dos parâmetros do programa e encerra o programa
-    printf("Uso: %s <ip do servidor> <porta do servidor>\n", comandoPrograma);
+    printf("Uso: %s <ip do servidor> <porta do servidor> start\n", comandoPrograma);
     printf("Exemplo: %s 127.0.0.1 51511\n", comandoPrograma);
     exit(EXIT_FAILURE);
 }
@@ -86,29 +86,14 @@ void enviarEReceberMensagemServidor(int socketClienteIPv4, int socketClienteIPv6
     enviarEReceberMensagem(socketCliente, dadosServidor, mensagem, 1);
 }
 
-int getNumeroDefensores(char mensagem[BUFSZ]) {
-    int i;
-    // Identifica o numero de defensores com base na mensagem de resposta do getdefenders
-    int tamMsg = strlen(mensagem);
-    int contVirgulas = 0;
-    for(i=0; i<tamMsg; i++) {
-        if(mensagem[i] == ',') {
-            contVirgulas++;
-        }
-    }
-    return (contVirgulas+1)/2;
-}
-
-void preencherListaPokemonsDefensores(int numeroDefensores, char mensagem[BUFSZ], struct PosPokemonDefensor defensores[]) {
-    int i;
-    int offset = 10;
-    for(i=0; i<numeroDefensores; i++) {
-        int lido;
-        sscanf(mensagem+offset, "[%d, %d]%n", &defensores[i].posX, &defensores[i].posY, &lido);
-        offset+=lido;
-        if(i != numeroDefensores-1) {
-            offset+=2;
-        }
+void leMensagemEntrada(char mensagem[BUFSZ]) {
+    printf("> ");
+    // Lê a mensagem digitada e a salva em 'mensagem'
+    memset(mensagem, 0, sizeof(*mensagem));
+    fgets(mensagem, BUFSZ-1, stdin);
+    // Caso a mensagem lida não termine com \n coloca um \n
+    if(mensagem[strlen(mensagem)-1] != '\n') {
+        strcat(mensagem, "\n");
     }
 }
 
@@ -133,7 +118,6 @@ void preencherListaPokemonsAtacantes(char mensagem[BUFSZ], struct Lista* listaPo
             pokemonAtacante->linha = idLinha-1;
             pokemonAtacante->hits = hits;
             pokemonAtacante->id = id;
-            printf("%s: %s\n", parte, nome);
             strcpy(pokemonAtacante->nome, nome);
             adicionarElemento(listaPokemonsAtacantes, *pokemonAtacante);
             parte = strtok(NULL, "\n");
@@ -142,73 +126,104 @@ void preencherListaPokemonsAtacantes(char mensagem[BUFSZ], struct Lista* listaPo
 }
 
 void comunicarComServidor(int socketClienteIPv4, int socketClienteIPv6, struct sockaddr_storage dadosServidor[4]) {
-    int i, j, k;
-
-    // Inicia o jogo
-    char mensagem[BUFSZ];
-    for(i=0 ; i<4; i++) {
-        strcpy(mensagem, "start\n");
-        enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
-    }
-    // Busca os pokemons defensores
-    char lixo[BUFSZ];
-    strcpy(mensagem, "getdefenders\n");
-    int servidorAReceber = rand()%4;
-    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
-    // Converte a mensagem para a lista de pokemons defensores
-    int numeroDefensores = getNumeroDefensores(mensagem);
-    struct PosPokemonDefensor defensores[numeroDefensores];
-    preencherListaPokemonsDefensores(numeroDefensores, mensagem, defensores);
-    // Loop para executar os turnos
-    for(i=0; i<=MAX_TURNOS; i++) {
-        // Inicializa uma lista encadeada para os pokemons atacantes
+    int i;
+    // Executa jogos ate que o cliente receba um 'quit'
+    while(1) { // Loop de todos os jogos
+        // Inicia o jogo
+        char mensagem[BUFSZ];
+        printf("> %s", "start\n");
+        for(i=0 ; i<4; i++) {
+            strcpy(mensagem, "start\n");
+            enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
+        }
+        // Busca os pokemons defensores
+        strcpy(mensagem, "getdefenders\n");
+        printf("> %s", mensagem);
+        // Escolhe um servidor para receber as mensagens que podem ser recebidas por qualquer servidor
+        int servidorAReceber = rand()%4;
+        enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+        // Cria uma lista dos pokemons atacantes
         struct Lista listaPokemonsAtacantes;
         inicializarLista(&listaPokemonsAtacantes);
-        // Para cada servidor
-        for(j=0; j<4; j++) {
-            // Envia a mensagem de getturn
-            sprintf(mensagem, "%s %d\n", "getturn", i);
-            enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[j], mensagem);
-            // Adiciona os pokemons atacantes recebidos na lista
-            preencherListaPokemonsAtacantes(mensagem, &listaPokemonsAtacantes);
-        }
-        // Para cada defensor
-        for(j=0; j<numeroDefensores; j++) {
-            // E para cada pokemon atacante
-            for(k=0; k<listaPokemonsAtacantes.tamanho; k++) {
-                struct PosPokemonDefensor defensor = defensores[j];
-                struct PokemonAtacante atacante = *buscarElementoPos(&listaPokemonsAtacantes, k);
-                // Verifica se o pokemon defensor pode atacar esse pokemon atacante
-                if(getHitsPokemon(atacante.nome) > atacante.hits && defensor.posX == atacante.coluna && (defensor.posY == atacante.linha || defensor.posY-1 == atacante.linha)) {
-                    // Caso o ataque possa ser feito, gera a mensagem de ataque
-                    char mensagemAtaque[BUFSZ];
-                    sprintf(mensagemAtaque, "shot %d %d %d\n", defensor.posX+1, defensor.posY+1, atacante.id);
-                    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante.linha], mensagemAtaque);
-                    // Verifica se o ataque foi um sucesso
-                    // Pelo algoritmo usado pelo cliente, os ataques devem sempre ser um sucesso
-                    int posX, posY, id, status;
-                    sscanf(mensagemAtaque, "%s %d %d %d %d", lixo, &posX, &posY, &id, &status);
-                    if(status != 0) {
-                        sairComMensagem("Erro ao atirar em pokemons atacantes");
+        // Flag para indicar se o cliente leu uma mensagem 'quit'
+        int encerrouServidores = 0;
+        while(1) { // Loop de um jogo
+            // Lê mensagens recebidas pelo teclado do cliente
+            leMensagemEntrada(mensagem);
+            // Verifica se a mensagem e de getturn
+            if(strncmp("getturn ", mensagem, 8) == 0) {
+                // Limpa a lista de atacantes, ja que ela sera atualizada
+                limpaLista(&listaPokemonsAtacantes);
+                // Flag para indicar um encerramento causado por um gameover
+                int sair = 0;
+                // Array para guardar a mensagem original
+                char mensagemOriginal[BUFSZ];
+                strcpy(mensagemOriginal, mensagem);
+                for(i=0; i<4; i++) {
+                    strcpy(mensagem, mensagemOriginal);
+                    // Envia a mensagem para os quatro servidores
+                    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
+                    // Se deu gameover com sucesso
+                    if(strncmp("gameover 0 ", mensagem, 11) == 0) {
+                        // Encerra os servidores, ja que o jogo foi concluido com sucesso
+                        strcpy(mensagem, "quit\n");
+                        printf("> %s", mensagem);
+                        enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[i], mensagem);
+                        sair = 1;
+                        encerrouServidores = 1;
+                        break;
                     }
-                    // Se o ataque deu certo, atualiza a vida do pokemon atacado
-                    atacante.hits++;
-                    // Atualiza o pokemon atacado na lista
-                    atualizarElemento(&listaPokemonsAtacantes, atacante);
-                    break;
+                    // Se deu gameover com erro
+                    if(strncmp("gameover 1 ", mensagem, 11) == 0) {
+                        // Reinicia o jogo ja que ele foi finalizado com erro
+                        sair = 1;
+                        break;
+                    }
+                    // Se nao deu gameover preenche a lista de atacantes
+                    preencherListaPokemonsAtacantes(mensagem, &listaPokemonsAtacantes);
+                }
+                if(sair) break;
+            } else {
+                // Verifica se a mensagem e de shot
+                if(strncmp("shot ", mensagem, 5) == 0) {
+                    char lixo[BUFSZ];
+                    int posX, posY, idAtacante;
+                    // Le a posicao do defensor e o id do atacante da mensagem shot
+                    sscanf(mensagem, "%s %d %d %d", lixo, &posX, &posY, &idAtacante);
+                    struct PokemonAtacante* atacante = buscarElementoId(&listaPokemonsAtacantes, idAtacante);
+                    // Se o id informado do pokemon atacante e invalido
+                    if(atacante == NULL) {
+                        printf("Id do pokemon atacante informado nao existe\n");
+                    } else {
+                        // Se o id e valido envia o comando de ataque para o servidor correto
+                        enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[atacante->linha], mensagem);
+                    } 
+                } else { // Nesse ponto a mensagem pode ser getdefenders, quit ou invalida
+                    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+                    if(strcmp("exited\n", mensagem) == 0) {
+                        // Mensagem foi de quit
+                        encerrouServidores = 1;
+                        break;
+                    }
+                    // Se deu gameover com sucesso
+                    if(strncmp("gameover 0 ", mensagem, 11) == 0) {
+                        // Encerra os servidores, ja que o jogo foi concluido com sucesso
+                        strcpy(mensagem, "quit\n");
+                        printf("> %s", mensagem);
+                        enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
+                        encerrouServidores = 1;
+                        break;
+                    }
+                    // Se deu gameover com erro
+                    if(strncmp("gameover 1 ", mensagem, 11) == 0) {
+                        // Reinicia o jogo ja que ele foi finalizado com erro
+                        break;
+                    }
                 }
             }
         }
-        // Limpa a lista de pokemons atacantes
-        limpaLista(&listaPokemonsAtacantes);
+        if(encerrouServidores) break;
     }
-    // Envia um getturn apos o fim do jogo para receber a mensagem de gameover
-    sprintf(mensagem, "%s %d\n", "getturn", MAX_TURNOS+1);
-    servidorAReceber = rand()%4;
-    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
-    // Envvia um quit para encerrar os servidores
-    strcpy(mensagem, "quit\n");
-    enviarEReceberMensagemServidor(socketClienteIPv4, socketClienteIPv6, dadosServidor[servidorAReceber], mensagem);
 }
 
 int main(int argc, char **argv) {

@@ -38,15 +38,19 @@ void enviarEReceberMensagem(int socketCliente, struct sockaddr_storage dadosServ
     if(strlen(mensagem) != tamanhoMensagemEnviada) {
         sairComMensagem("Erro ao enviar mensagem");
     }
-    // Imprime a mensagem enviada
-    if(debug) printf("> %s", mensagem);
     // Espera a resposta do servidor
     char mensagemResposta[BUFSZ];
     memset(mensagemResposta, 0, BUFSZ);
     socklen_t len = sizeof(dadosServidor);
     size_t tamanhoMensagem = recvfrom(socketCliente, (char *)mensagemResposta, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len);
+    // Contador do numero de retransmissoes feitas
+    int numeroRetransmissoes = 0;
     // Se a resposta nao foi recebida
     while(tamanhoMensagem == -1) {
+        // Tenta 5 retransmissoes para o quit, caso falhe as 5 considera que a resposta do servidor se perdeu e ele foi encerrado
+        if(numeroRetransmissoes > 5 && strcmp(mensagem, "quit\n") == 0) {
+            break;
+        }
         // Verifica se foi timeout ou outro erro
         if(errno != EAGAIN && errno != EWOULDBLOCK) {
             perror("Erro ao receber mensagem de resposta");
@@ -58,7 +62,7 @@ void enviarEReceberMensagem(int socketCliente, struct sockaddr_storage dadosServ
         if (strlen(mensagem) != tamanhoMensagemEnviada) {
             sairComMensagem("Erro ao enviar mensagem");
         }
-        if(debug) printf("> %s", mensagem);
+        numeroRetransmissoes++;
         // Espera a resposta do servidor novamente
         memset(mensagemResposta, 0, BUFSZ);
         tamanhoMensagem = recvfrom(socketCliente, (char *)mensagemResposta, BUFSZ, MSG_WAITALL, (struct sockaddr *) &dadosServidor, &len);
