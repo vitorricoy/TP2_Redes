@@ -1,0 +1,3 @@
+Para a compilação basta executar o comando make.
+
+Para executar o cliente e servidor da entrega, basta seguir o que foi especificado no enunciado do trabalho. Para executar o cliente que utilizei nos meus testes (test_client), basta executá-lo com os mesmos parâmetros do client (./test_client <host> <first port> start).
